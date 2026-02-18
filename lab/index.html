@@ -1,0 +1,1530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16161a">
+<title>MuJoCo Lab — Level 7 Real Physics</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+<link rel="preload" href="https://unpkg.com/three@0.169.0/build/three.module.js" as="script" crossorigin>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #16161a;
+  --surface:   #1e1e24;
+  --raised:    #252530;
+  --border:    #2e2e3a;
+  --text:      #e8e8e0;
+  --text-sec:  #8888a0;
+  --text-mute: #555568;
+  --accent:    #d4884a;
+  --accent-lit:#e8a060;
+  --ok:        #60c080;
+  --warn:      #e0b040;
+  --tcp:       #e05050;
+  --radius:    2px;
+  --sidebar:   300px;
+  --gap:       16px;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100dvh;
+  width: 100vw;
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+#canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Loading overlay ─────────────────────────────── */
+#loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  z-index: 10;
+}
+
+#loading-overlay.hidden { display: none; }
+
+.loading-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+.loading-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 280px;
+}
+
+.loading-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+.loading-step.active { color: var(--text); }
+.loading-step.done { color: var(--ok); }
+.loading-step.error { color: var(--tcp); }
+
+.step-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius);
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.loading-step.active .step-indicator {
+  background: var(--accent);
+  animation: pulse-indicator 1s ease-in-out infinite;
+}
+
+.loading-step.done .step-indicator { background: var(--ok); }
+.loading-step.error .step-indicator { background: var(--tcp); }
+
+@keyframes pulse-indicator {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Error banner ────────────────────────────────── */
+#error-banner {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(30, 20, 20, 0.95);
+  border: 1px solid var(--tcp);
+  color: var(--tcp);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 10px 20px;
+  max-width: 480px;
+  text-align: center;
+  z-index: 20;
+  display: none;
+}
+
+#error-banner.visible { display: block; }
+
+/* ── Sidebar ─────────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.sidebar-header {
+  padding: 14px var(--gap) 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
+  flex-shrink: 0;
+}
+
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  text-decoration: none;
+  margin-bottom: 10px;
+}
+
+.back-link:hover { color: var(--text-sec); }
+.back-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sidebar-header h1 {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.section {
+  padding: var(--gap);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+
+/* ── Buttons ─────────────────────────────────────── */
+button {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 14px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  background: var(--raised);
+  color: var(--text-sec);
+}
+
+button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.btn-accent {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0f0f0f;
+}
+
+button.btn-accent:hover {
+  background: var(--accent-lit);
+  border-color: var(--accent-lit);
+}
+
+button.btn-active {
+  background: var(--raised);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── File check status ───────────────────────────── */
+.file-check-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.file-name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.file-status {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.file-status.ok { color: var(--ok); }
+.file-status.missing { color: var(--tcp); }
+.file-status.unknown { color: var(--text-mute); }
+
+.setup-note {
+  font-size: 11px;
+  color: var(--text-mute);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+
+/* ── API Key input ───────────────────────────────── */
+.api-input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 9px 10px;
+  margin-bottom: 8px;
+  min-height: 44px;
+  outline: none;
+}
+
+.api-input:focus {
+  border-color: var(--accent);
+}
+
+.api-input::placeholder {
+  color: var(--text-mute);
+}
+
+.api-note {
+  font-size: 10px;
+  color: var(--text-mute);
+  line-height: 1.5;
+}
+
+/* ── Status display ──────────────────────────────── */
+.phase-display {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 10px 0 6px;
+}
+
+.phase-display.ok { color: var(--ok); }
+.phase-display.warn { color: var(--warn); }
+.phase-display.idle { color: var(--text-mute); }
+.phase-display.error { color: var(--tcp); }
+
+.status-sub {
+  font-size: 11px;
+  color: var(--text-sec);
+  min-height: 16px;
+}
+
+/* ── Readout grid ────────────────────────────────── */
+.grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.readout {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 7px 9px;
+}
+
+.readout-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 3px;
+}
+
+.readout-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Speed slider ────────────────────────────────── */
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.speed-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
+.speed-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+  min-width: 32px;
+  text-align: right;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  border-radius: 0;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--raised);
+}
+
+input[type=range]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Legend ──────────────────────────────────────── */
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.legend-swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+/* ── Reduced motion ──────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  button, input[type=range]::-webkit-slider-thumb,
+  .loading-step.active .step-indicator {
+    animation: none;
+    transition: none;
+  }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="three-canvas"></canvas>
+
+    <div id="loading-overlay" aria-live="polite" aria-label="Loading progress">
+      <div class="loading-title">MuJoCo Lab — Initializing</div>
+      <div class="loading-steps">
+        <div class="loading-step" id="step-wasm">
+          <div class="step-indicator"></div>
+          <span>Loading MuJoCo WASM...</span>
+        </div>
+        <div class="loading-step" id="step-model">
+          <div class="step-indicator"></div>
+          <span>Fetching robot model...</span>
+        </div>
+        <div class="loading-step" id="step-vfs">
+          <div class="step-indicator"></div>
+          <span>Building virtual filesystem...</span>
+        </div>
+        <div class="loading-step" id="step-physics">
+          <div class="step-indicator"></div>
+          <span>Initializing physics...</span>
+        </div>
+        <div class="loading-step" id="step-ready">
+          <div class="step-indicator"></div>
+          <span>Ready.</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="error-banner" role="alert"></div>
+  </div>
+
+  <aside id="sidebar" aria-label="Control panel">
+
+    <!-- Header -->
+    <div class="sidebar-header">
+      <a href="../index.html" class="back-link">&#8592; Learning Path</a>
+      <h1>MuJoCo Lab</h1>
+      <p>Level 7 — Real Physics</p>
+    </div>
+
+    <!-- Setup -->
+    <div class="section">
+      <div class="section-label">WASM Files</div>
+      <p class="setup-note">Files are loaded automatically from unpkg CDN. Click below to verify connectivity.</p>
+      <div class="file-check-row">
+        <span class="file-name">mujoco_wasm.js</span>
+        <span class="file-status unknown" id="status-js">—</span>
+      </div>
+      <div class="file-check-row" style="margin-bottom:12px">
+        <span class="file-name">mujoco_wasm.wasm</span>
+        <span class="file-status unknown" id="status-wasm">—</span>
+      </div>
+      <button id="btn-check" style="width:100%">Check Files</button>
+    </div>
+
+    <!-- Gemini API Key -->
+    <div class="section">
+      <div class="section-label">GEMINI API KEY</div>
+      <input
+        type="password"
+        id="api-key-input"
+        class="api-input"
+        placeholder="AIza..."
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="Gemini API key"
+      >
+      <p class="api-note">Key stays in browser. Never sent anywhere except Google.</p>
+    </div>
+
+    <!-- Status -->
+    <div class="section">
+      <div class="section-label">STATUS</div>
+      <div class="phase-display idle" id="phase-display">IDLE</div>
+      <div class="status-sub" id="status-sub" aria-live="polite"></div>
+    </div>
+
+    <!-- End-effector readouts -->
+    <div class="section">
+      <div class="section-label">END-EFFECTOR</div>
+      <div class="grid-2x2">
+        <div class="readout">
+          <div class="readout-label">X (m)</div>
+          <div class="readout-val" id="ee-x">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Y (m)</div>
+          <div class="readout-val" id="ee-y">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Z (m)</div>
+          <div class="readout-val" id="ee-z">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Gripper</div>
+          <div class="readout-val" id="ee-grip">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="section">
+      <div class="section-label">CONTROLS</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="btn-scan" class="btn-accent" disabled>Scan &amp; Pick</button>
+        <div class="btn-row">
+          <button id="btn-auto" style="flex:1" disabled>Auto Demo</button>
+          <button id="btn-reset" style="flex:1" disabled>Reset Scene</button>
+        </div>
+      </div>
+      <div class="speed-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" id="speed-slider" min="0.25" max="2" step="0.25" value="1" aria-label="Simulation speed">
+        <span class="speed-val" id="speed-val">1×</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="section">
+      <div class="section-label">LEGEND</div>
+      <ul class="legend-list">
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#d4884a"></div>
+          <span>Robot links</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#f0a060;border-radius:50%"></div>
+          <span>Joints</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#e05050"></div>
+          <span>TCP / Gripper</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#60c080"></div>
+          <span>Target marker</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#cc2525"></div>
+          <span>Cubes</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-swatch" style="background:#4a4a66"></div>
+          <span>Tray (drop zone)</span>
+        </li>
+      </ul>
+    </div>
+
+  </aside>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── DOM refs ──────────────────────────────────────────────────────────
+const canvasEl        = document.getElementById('three-canvas');
+const loadingOverlay  = document.getElementById('loading-overlay');
+const errorBanner     = document.getElementById('error-banner');
+const phaseDisplay    = document.getElementById('phase-display');
+const statusSub       = document.getElementById('status-sub');
+const eeX             = document.getElementById('ee-x');
+const eeY             = document.getElementById('ee-y');
+const eeZ             = document.getElementById('ee-z');
+const eeGrip          = document.getElementById('ee-grip');
+const btnScan         = document.getElementById('btn-scan');
+const btnAuto         = document.getElementById('btn-auto');
+const btnReset        = document.getElementById('btn-reset');
+const btnCheck        = document.getElementById('btn-check');
+const speedSlider     = document.getElementById('speed-slider');
+const speedVal        = document.getElementById('speed-val');
+const apiKeyInput     = document.getElementById('api-key-input');
+
+// ── Loading step helpers ──────────────────────────────────────────────
+function stepActive(id) {
+  const el = document.getElementById(id);
+  el.className = 'loading-step active';
+}
+function stepDone(id) {
+  const el = document.getElementById(id);
+  el.className = 'loading-step done';
+}
+function stepError(id, msg) {
+  const el = document.getElementById(id);
+  el.className = 'loading-step error';
+  el.querySelector('span').textContent = msg;
+}
+
+// ── Error display ─────────────────────────────────────────────────────
+function showError(msg) {
+  errorBanner.textContent = msg;
+  errorBanner.classList.add('visible');
+}
+
+// ── Phase / status helpers ────────────────────────────────────────────
+const PHASE_COLORS = {
+  IDLE: 'idle', LOADING: 'warn', SCANNING: 'warn',
+  APPROACHING_ABOVE: 'warn', APPROACHING: 'warn',
+  GRASPING: 'warn', LIFTING: 'ok', TRANSPORTING: 'ok',
+  PLACING: 'ok', RETRACTING: 'ok', DONE: 'ok', ERROR: 'error'
+};
+
+function setPhase(phase, sub = '') {
+  phaseDisplay.textContent = phase;
+  phaseDisplay.className = 'phase-display ' + (PHASE_COLORS[phase] || 'idle');
+  statusSub.textContent = sub;
+}
+
+// ── MuJoCo WASM loader ────────────────────────────────────────────────
+async function loadMuJoCo() {
+  const WASM_CDN = 'https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.wasm';
+  const JS_CDN   = 'https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.js';
+
+  const wasmRes = await fetch(WASM_CDN);
+  if (!wasmRes.ok) throw new Error('Failed to fetch MuJoCo WASM from CDN');
+
+  const jsRes = await fetch(JS_CDN);
+  if (!jsRes.ok) throw new Error('Failed to fetch MuJoCo JS from CDN');
+
+  const wasmBlob = new Blob([await wasmRes.arrayBuffer()], { type: 'application/wasm' });
+  const wasmUrl = URL.createObjectURL(wasmBlob);
+
+  const jsBlob = new Blob([await jsRes.arrayBuffer()], { type: 'application/javascript' });
+  const jsUrl = URL.createObjectURL(jsBlob);
+
+  const module = await import(/* @vite-ignore */ jsUrl);
+  const loadMujoco = module.default;
+
+  return await loadMujoco({
+    locateFile: (path) => path.endsWith('.wasm') ? wasmUrl : path
+  });
+}
+
+// ── Scene constants ───────────────────────────────────────────────────
+const MENAGERIE_BASE = 'https://raw.githubusercontent.com/google-deepmind/mujoco_menagerie/main/franka_emika_panda/';
+
+const CUBE_POSITIONS = [
+  { x: -0.3, y: 0, z: 0.44 },
+  { x: -0.1, y: 0, z: 0.44 },
+  { x:  0.1, y: 0, z: 0.44 },
+  { x:  0.3, y: 0, z: 0.44 },
+];
+
+const TRAY_POS = { x: 0.5, y: 0, z: 0.44 };
+const HOME_POS = [0, -0.5, 0, -1.5, 0, 1.0, 0.785];
+
+// ── Three.js setup ────────────────────────────────────────────────────
+const renderer = new THREE.WebGLRenderer({
+  canvas: canvasEl,
+  antialias: true,
+  preserveDrawingBuffer: true
+});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setClearColor(0x16161a);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x16161a);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 50);
+camera.position.set(0, 1.2, 1.8);
+camera.lookAt(0, 0.5, 0);
+
+const controls = new OrbitControls(camera, canvasEl);
+controls.target.set(0, 0.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Top-down camera for Gemini scan
+const topDownCamera = new THREE.OrthographicCamera(-0.6, 0.6, 0.4, -0.4, 0.01, 10);
+topDownCamera.position.set(0, 2.0, 0.001);
+topDownCamera.lookAt(0, 0, 0.44);
+
+// Lighting
+const ambient = new THREE.AmbientLight(0x404040, 0.6);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+dirLight.position.set(2, 4, 3);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 20;
+dirLight.shadow.camera.left = -2;
+dirLight.shadow.camera.right = 2;
+dirLight.shadow.camera.top = 2;
+dirLight.shadow.camera.bottom = -2;
+scene.add(dirLight);
+
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(1.5, 1.5);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x252530 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Target marker (shown during pick sequence)
+const targetMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.015, 8, 8),
+  new THREE.MeshStandardMaterial({ color: 0x60c080, emissive: 0x206040 })
+);
+targetMarker.visible = false;
+scene.add(targetMarker);
+
+// Resize handler
+function onResize() {
+  const wrap = canvasEl.parentElement;
+  const w = wrap.clientWidth;
+  const h = wrap.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+onResize();
+
+// ── Robot model building ──────────────────────────────────────────────
+function buildPatchedXML(originalXML) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(originalXML, 'text/xml');
+
+  const worldbody = doc.querySelector('worldbody');
+  if (!worldbody) throw new Error('No <worldbody> in scene.xml');
+
+  // Add cubes
+  CUBE_POSITIONS.forEach((pos, i) => {
+    const body = doc.createElement('body');
+    body.setAttribute('name', `cube_${i}`);
+    body.setAttribute('pos', `${pos.x} ${pos.y} ${pos.z}`);
+    const geom = doc.createElement('geom');
+    geom.setAttribute('name', `cube_geom_${i}`);
+    geom.setAttribute('type', 'box');
+    geom.setAttribute('size', '0.025 0.025 0.025');
+    geom.setAttribute('rgba', '0.8 0.15 0.15 1');
+    geom.setAttribute('mass', '0.1');
+    const joint = doc.createElement('freejoint');
+    joint.setAttribute('name', `cube_joint_${i}`);
+    body.appendChild(joint);
+    body.appendChild(geom);
+    worldbody.appendChild(body);
+  });
+
+  // Add tray
+  const trayBody = doc.createElement('body');
+  trayBody.setAttribute('name', 'tray');
+  trayBody.setAttribute('pos', `${TRAY_POS.x} ${TRAY_POS.y} ${TRAY_POS.z}`);
+  const trayGeom = doc.createElement('geom');
+  trayGeom.setAttribute('name', 'tray_geom');
+  trayGeom.setAttribute('type', 'box');
+  trayGeom.setAttribute('size', '0.12 0.08 0.005');
+  trayGeom.setAttribute('rgba', '0.3 0.3 0.4 1');
+  trayBody.appendChild(trayGeom);
+  worldbody.appendChild(trayBody);
+
+  // Add TCP site inside hand body
+  const handBody = doc.querySelector('body[name="hand"]') || doc.querySelector('body[name*="hand"]');
+  if (handBody) {
+    const tcpSite = doc.createElement('site');
+    tcpSite.setAttribute('name', 'tcp');
+    tcpSite.setAttribute('pos', '0 0 0.1');
+    tcpSite.setAttribute('size', '0.01');
+    tcpSite.setAttribute('group', '1');
+    handBody.appendChild(tcpSite);
+  }
+
+  const serializer = new XMLSerializer();
+  return serializer.serializeToString(doc);
+}
+
+async function loadRobotModel(mujoco) {
+  try { mujoco.FS.mkdir('/working'); } catch (_) {}
+
+  // Fetch scene.xml
+  const sceneRes = await fetch(MENAGERIE_BASE + 'scene.xml');
+  if (!sceneRes.ok) throw new Error('Failed to fetch scene.xml from Menagerie');
+  const sceneText = await sceneRes.text();
+
+  // Collect all file= references
+  const fileMatches = [...sceneText.matchAll(/file="([^"]+)"/g)].map(m => m[1]);
+  // Also match include file refs
+  const includeMatches = [...sceneText.matchAll(/file="([^"]+\.xml)"/g)].map(m => m[1]);
+  const allFiles = [...new Set([...fileMatches, ...includeMatches])];
+
+  // Fetch all assets
+  const binaryExts = ['stl', 'STL', 'png', 'PNG', 'jpg', 'JPG', 'obj', 'OBJ'];
+  for (const filepath of allFiles) {
+    const filename = filepath.split('/').pop();
+    const url = MENAGERIE_BASE + (filepath.startsWith('./') ? filepath.slice(2) : filepath);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const ext = filename.split('.').pop().toLowerCase();
+      if (binaryExts.includes(ext) || binaryExts.map(e => e.toLowerCase()).includes(ext)) {
+        mujoco.FS.writeFile('/working/' + filename, new Uint8Array(await res.arrayBuffer()));
+      } else {
+        // Text file (xml)
+        const subText = await res.text();
+        mujoco.FS.writeFile('/working/' + filename, subText);
+        // Recursively find and fetch assets in sub-xmls
+        const subFiles = [...subText.matchAll(/file="([^"]+)"/g)].map(m => m[1]);
+        for (const sf of subFiles) {
+          const sfname = sf.split('/').pop();
+          const sfurl = MENAGERIE_BASE + (sf.startsWith('./') ? sf.slice(2) : sf);
+          try {
+            const sfres = await fetch(sfurl);
+            if (!sfres.ok) continue;
+            mujoco.FS.writeFile('/working/' + sfname, new Uint8Array(await sfres.arrayBuffer()));
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Patch scene XML and write to VFS
+  const patchedXML = buildPatchedXML(sceneText);
+  mujoco.FS.writeFile('/working/scene.xml', patchedXML);
+
+  const model = mujoco.MjModel.loadFromXML('/working/scene.xml');
+  const data = new mujoco.MjData(model);
+  return { model, data };
+}
+
+// ── Body geometry sync ────────────────────────────────────────────────
+function buildBodyGroups(mujoco, model) {
+  const groups = [];
+  const ngeom = model.ngeom;
+
+  // Materials
+  const linkMat   = new THREE.MeshStandardMaterial({ color: 0xd4884a, metalness: 0.3, roughness: 0.5 });
+  const cubeMat   = new THREE.MeshStandardMaterial({ color: 0xcc2525, roughness: 0.6 });
+  const trayMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a66, roughness: 0.8 });
+  const groundMat2 = new THREE.MeshStandardMaterial({ color: 0x252530 });
+
+  for (let b = 0; b < model.nbody; b++) {
+    const g = new THREE.Group();
+    scene.add(g);
+    groups.push(g);
+  }
+
+  // For each geom, attach a mesh to its body group
+  // We use box geoms for cubes/tray and capsule-like shapes for robot links
+  const geomType = {
+    PLANE: 0, HFIELD: 1, SPHERE: 2, CAPSULE: 3,
+    ELLIPSOID: 4, CYLINDER: 5, BOX: 6, MESH: 7
+  };
+
+  for (let gi = 0; gi < ngeom; gi++) {
+    const bodyId = model.geom_bodyid[gi];
+    const type = model.geom_type[gi];
+    const size = model.geom_size.subarray(gi * 3, gi * 3 + 3);
+    const pos = model.geom_pos.subarray(gi * 3, gi * 3 + 3);
+    const quat = model.geom_quat.subarray(gi * 4, gi * 4 + 4);
+    const rgba = model.geom_rgba.subarray(gi * 4, gi * 4 + 4);
+
+    let geo = null;
+    let mat = null;
+
+    // Determine color from rgba
+    const r = rgba[0], g2 = rgba[1], b2 = rgba[2];
+    // Red cubes
+    if (r > 0.6 && g2 < 0.3 && b2 < 0.3) {
+      mat = cubeMat;
+    }
+    // Tray (blueish-gray)
+    else if (b2 > 0.3 && r < 0.4 && g2 < 0.4) {
+      mat = trayMat;
+    }
+    else {
+      // Robot link color based on rgba alpha (robot has alpha=1, gray tones)
+      const col = new THREE.Color(r, g2, b2);
+      mat = new THREE.MeshStandardMaterial({ color: col, metalness: 0.25, roughness: 0.55 });
+    }
+
+    if (type === geomType.BOX) {
+      geo = new THREE.BoxGeometry(size[0] * 2, size[1] * 2, size[2] * 2);
+    } else if (type === geomType.SPHERE) {
+      geo = new THREE.SphereGeometry(size[0], 12, 8);
+    } else if (type === geomType.CAPSULE) {
+      geo = new THREE.CapsuleGeometry(size[0], size[1] * 2, 4, 8);
+    } else if (type === geomType.CYLINDER) {
+      geo = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 12);
+    } else if (type === geomType.PLANE) {
+      geo = new THREE.PlaneGeometry(1.5, 1.5);
+      mat = groundMat2;
+    } else if (type === geomType.MESH) {
+      // Approximate mesh geoms with a box scaled by convex hull approximation
+      geo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+      mat = linkMat;
+    } else {
+      continue;
+    }
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    // Apply geom offset relative to body
+    mesh.position.set(pos[0], pos[1], pos[2]);
+    // MuJoCo quat: [w, x, y, z]
+    mesh.quaternion.set(quat[1], quat[2], quat[3], quat[0]);
+
+    groups[bodyId].add(mesh);
+  }
+
+  return groups;
+}
+
+function syncBodies(model, data, bodyGroups) {
+  for (let b = 0; b < model.nbody; b++) {
+    const pos = data.xpos.subarray(b * 3, b * 3 + 3);
+    const quat = data.xquat.subarray(b * 4, b * 4 + 4);
+    bodyGroups[b].position.set(pos[0], pos[1], pos[2]);
+    bodyGroups[b].quaternion.set(quat[1], quat[2], quat[3], quat[0]);
+  }
+}
+
+// ── IK solver ─────────────────────────────────────────────────────────
+function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 80, tol = 5e-4) {
+  const nv = model.nv;
+  for (let iter = 0; iter < maxIter; iter++) {
+    mujoco.mj_forward(model, data);
+    const sitePos = data.site_xpos.subarray(siteId * 3, siteId * 3 + 3);
+    const err = [
+      targetPos[0] - sitePos[0],
+      targetPos[1] - sitePos[1],
+      targetPos[2] - sitePos[2],
+    ];
+    const errMag = Math.hypot(...err);
+    if (errMag < tol) break;
+
+    const jacp = new Float64Array(3 * nv);
+    mujoco.mj_jacSite(model, data, jacp, null, siteId);
+
+    // Damped gradient descent
+    const step = Math.min(0.5, 0.5 / errMag);
+    for (let j = 0; j < nv; j++) {
+      let dq = 0;
+      for (let i = 0; i < 3; i++) dq += jacp[i * nv + j] * err[i];
+      data.qpos[j] += step * dq;
+    }
+    mujoco.mj_normalizeQuat(model, data);
+  }
+}
+
+// ── State machine ─────────────────────────────────────────────────────
+const TIMESTEP = 1 / 500;
+const STEPS_PER_FRAME = 5;
+
+let mujoco = null;
+let model = null;
+let data = null;
+let bodyGroups = [];
+let siteId = -1;
+let gripperJointIds = [];
+
+let simState = {
+  phase: 'IDLE',
+  cubeQueue: [],
+  currentCube: null,
+  targetPos: null,
+  gripperOpen: true,
+  autoDemo: false,
+  speed: 1.0,
+  frameId: null,
+  initialQpos: null,
+  cubePosBackup: [],
+};
+
+function findSiteId(model, name) {
+  for (let i = 0; i < model.nsite; i++) {
+    // Decode site name from MuJoCo name array
+    const start = model.name_siteadr[i];
+    let end = start;
+    while (model.names[end] !== 0) end++;
+    const siteName = String.fromCharCode(...model.names.subarray(start, end));
+    if (siteName === name) return i;
+  }
+  return -1;
+}
+
+function findJointId(model, name) {
+  for (let i = 0; i < model.njnt; i++) {
+    const start = model.name_jntadr[i];
+    let end = start;
+    while (model.names[end] !== 0) end++;
+    const jntName = String.fromCharCode(...model.names.subarray(start, end));
+    if (jntName === name) return i;
+  }
+  return -1;
+}
+
+function getTCPPos(data, siteId) {
+  if (siteId < 0) return null;
+  return [...data.site_xpos.subarray(siteId * 3, siteId * 3 + 3)];
+}
+
+function setGripper(open) {
+  simState.gripperOpen = open;
+  if (gripperJointIds.length >= 2) {
+    const val = open ? 0.04 : 0.0;
+    for (const id of gripperJointIds) {
+      data.qpos[model.jnt_qposadr[id]] = val;
+    }
+  }
+}
+
+function phaseDist(targetPos) {
+  const tcp = getTCPPos(data, siteId);
+  if (!tcp || !targetPos) return Infinity;
+  return Math.hypot(tcp[0] - targetPos[0], tcp[1] - targetPos[1], tcp[2] - targetPos[2]);
+}
+
+function moveTCP(targetPos) {
+  simState.targetPos = targetPos;
+  if (siteId >= 0) {
+    solveIK(mujoco, model, data, targetPos, siteId);
+  }
+}
+
+// Cube positions tracked in JS (since MuJoCo freejoint cubes move)
+let cubePositions = CUBE_POSITIONS.map(p => ({ x: p.x, y: p.y, z: p.z }));
+
+function getCubePos(idx) {
+  return cubePositions[idx];
+}
+
+// Phase transition distance threshold
+const PHASE_DIST_THRESH = 0.01;
+
+function tickStateMachine() {
+  const { phase } = simState;
+
+  if (phase === 'IDLE') {
+    if (simState.autoDemo && simState.cubeQueue.length === 0) {
+      // Reload queue for looping demo
+      simState.cubeQueue = [0, 1, 2, 3];
+    }
+    if (simState.cubeQueue.length > 0) {
+      simState.currentCube = simState.cubeQueue.shift();
+      transitionTo('APPROACHING_ABOVE');
+    }
+    return;
+  }
+
+  if (phase === 'APPROACHING_ABOVE') {
+    const cp = getCubePos(simState.currentCube);
+    const above = [cp.x, cp.y, cp.z + 0.18];
+    moveTCP(above);
+    targetMarker.position.set(cp.x, cp.y, cp.z + 0.18);
+    targetMarker.visible = true;
+    if (phaseDist(above) < PHASE_DIST_THRESH) {
+      transitionTo('APPROACHING');
+    }
+    return;
+  }
+
+  if (phase === 'APPROACHING') {
+    const cp = getCubePos(simState.currentCube);
+    const graspPos = [cp.x, cp.y, cp.z + 0.05];
+    moveTCP(graspPos);
+    targetMarker.position.set(...graspPos);
+    if (phaseDist(graspPos) < PHASE_DIST_THRESH) {
+      transitionTo('GRASPING');
+    }
+    return;
+  }
+
+  if (phase === 'GRASPING') {
+    setGripper(false);
+    // Run a few steps with closed gripper, then transition
+    if (!simState._graspTimer) simState._graspTimer = 0;
+    simState._graspTimer += TIMESTEP;
+    if (simState._graspTimer > 0.3) {
+      simState._graspTimer = 0;
+      // Attach cube to TCP (update tracked position)
+      transitionTo('LIFTING');
+    }
+    return;
+  }
+
+  if (phase === 'LIFTING') {
+    const cp = getCubePos(simState.currentCube);
+    const liftPos = [cp.x, cp.y, cp.z + 0.22];
+    moveTCP(liftPos);
+    targetMarker.position.set(...liftPos);
+    if (phaseDist(liftPos) < PHASE_DIST_THRESH) {
+      // Update tracked cube position to follow TCP
+      const tcp = getTCPPos(data, siteId);
+      if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
+      transitionTo('TRANSPORTING');
+    }
+    return;
+  }
+
+  if (phase === 'TRANSPORTING') {
+    const transportPos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22];
+    moveTCP(transportPos);
+    targetMarker.position.set(...transportPos);
+    const tcp = getTCPPos(data, siteId);
+    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
+    if (phaseDist(transportPos) < PHASE_DIST_THRESH) {
+      transitionTo('PLACING');
+    }
+    return;
+  }
+
+  if (phase === 'PLACING') {
+    const placePos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.08];
+    moveTCP(placePos);
+    targetMarker.position.set(...placePos);
+    const tcp = getTCPPos(data, siteId);
+    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
+    if (phaseDist(placePos) < PHASE_DIST_THRESH) {
+      setGripper(true);
+      if (!simState._placeTimer) simState._placeTimer = 0;
+      simState._placeTimer += TIMESTEP;
+      if (simState._placeTimer > 0.2) {
+        simState._placeTimer = 0;
+        transitionTo('RETRACTING');
+      }
+    }
+    return;
+  }
+
+  if (phase === 'RETRACTING') {
+    const homeAbove = [0, -0.3, 0.7];
+    moveTCP(homeAbove);
+    targetMarker.visible = false;
+    if (phaseDist(homeAbove) < 0.04) {
+      if (simState.cubeQueue.length > 0) {
+        transitionTo('IDLE');
+      } else {
+        transitionTo('DONE');
+      }
+    }
+    return;
+  }
+
+  if (phase === 'DONE') {
+    targetMarker.visible = false;
+    if (simState.autoDemo) {
+      // Reset cube positions for demo loop
+      cubePositions = CUBE_POSITIONS.map(p => ({ x: p.x, y: p.y, z: p.z }));
+      transitionTo('IDLE');
+    }
+    return;
+  }
+}
+
+const PHASE_LABELS = {
+  APPROACHING_ABOVE: 'APPROACHING',
+};
+
+function transitionTo(phase) {
+  simState.phase = phase;
+  setPhase(PHASE_LABELS[phase] || phase,
+    phase === 'GRASPING' ? 'Closing gripper...' :
+    phase === 'LIFTING'  ? `Lifting cube ${simState.currentCube}` :
+    phase === 'TRANSPORTING' ? 'Moving to tray...' :
+    phase === 'PLACING'  ? 'Placing in tray...' :
+    phase === 'RETRACTING' ? 'Retracting...' :
+    phase === 'DONE'     ? 'Pick complete.' : '');
+}
+
+// ── Readout update ────────────────────────────────────────────────────
+function updateReadouts() {
+  const tcp = getTCPPos(data, siteId);
+  if (tcp) {
+    eeX.textContent = tcp[0].toFixed(3);
+    eeY.textContent = tcp[1].toFixed(3);
+    eeZ.textContent = tcp[2].toFixed(3);
+  }
+  eeGrip.textContent = simState.gripperOpen ? 'OPEN' : 'CLOSED';
+}
+
+// ── Main animation loop ───────────────────────────────────────────────
+let loopRunning = false;
+let lastFrameTime = null;
+
+function startLoop() {
+  if (loopRunning) return;
+  loopRunning = true;
+  lastFrameTime = null;
+  loop();
+}
+
+function loop() {
+  if (!loopRunning) return;
+  simState.frameId = requestAnimationFrame(loop);
+
+  const now = performance.now();
+  if (lastFrameTime === null) { lastFrameTime = now; }
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.05); // cap at 50ms
+  lastFrameTime = now;
+
+  // Tick physics
+  const steps = Math.round(STEPS_PER_FRAME * simState.speed);
+  for (let s = 0; s < steps; s++) {
+    tickStateMachine();
+    mujoco.mj_step(model, data);
+  }
+
+  syncBodies(model, data, bodyGroups);
+  updateReadouts();
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// ── Gemini vision ─────────────────────────────────────────────────────
+async function scanWithGemini(apiKey) {
+  // Move to top-down view, render, capture
+  const prevSize = renderer.getSize(new THREE.Vector2());
+
+  // Render top-down snapshot at fixed size
+  renderer.setSize(512, 512);
+  renderer.render(scene, topDownCamera);
+  const imageBase64 = canvasEl.toDataURL('image/png').split(',')[1];
+
+  // Restore renderer size
+  renderer.setSize(prevSize.x, prevSize.y);
+  camera.aspect = prevSize.x / prevSize.y;
+  camera.updateProjectionMatrix();
+
+  const prompt = `This is a top-down view of a robotic workspace.
+Identify all red cubes visible in the image.
+The workspace spans approximately -0.4m to +0.4m on the horizontal axis and -0.3m to +0.3m on the vertical axis, with (0,0) at center.
+Return ONLY valid JSON, no markdown: {"cubes": [{"x": number, "y": number, "label": "A"|"B"|"C"|"D"}]}
+x increases to the right, y increases upward.`;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { text: prompt },
+          { inline_data: { mime_type: 'image/png', data: imageBase64 } }
+        ]}]
+      })
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${errText.slice(0, 120)}`);
+  }
+
+  const respData = await res.json();
+  if (!respData.candidates?.length) throw new Error('Gemini returned no candidates');
+  const text = respData.candidates[0].content.parts[0].text;
+  const json = text.replace(/```json\n?|\n?```/g, '').trim();
+  return JSON.parse(json);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────
+btnCheck.addEventListener('click', async () => {
+  const jsEl   = document.getElementById('status-js');
+  const wasmEl = document.getElementById('status-wasm');
+  jsEl.textContent   = '...';
+  jsEl.className     = 'file-status unknown';
+  wasmEl.textContent = '...';
+  wasmEl.className   = 'file-status unknown';
+
+  const jsRes   = await fetch('https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.js',   { method: 'HEAD' }).catch(() => ({ ok: false }));
+  const wasmRes = await fetch('https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.wasm', { method: 'HEAD' }).catch(() => ({ ok: false }));
+
+  jsEl.textContent   = jsRes.ok   ? 'OK' : 'MISSING';
+  jsEl.className     = 'file-status ' + (jsRes.ok   ? 'ok' : 'missing');
+  wasmEl.textContent = wasmRes.ok ? 'OK' : 'MISSING';
+  wasmEl.className   = 'file-status ' + (wasmRes.ok ? 'ok' : 'missing');
+});
+
+btnScan.addEventListener('click', async () => {
+  const apiKey = apiKeyInput.value.trim();
+  if (!apiKey) {
+    setPhase('ERROR', 'Enter Gemini API key first.');
+    return;
+  }
+
+  btnScan.disabled = true;
+  setPhase('SCANNING', 'Capturing scene...');
+
+  try {
+    const result = await scanWithGemini(apiKey);
+    const count = result.cubes?.length ?? 0;
+    setPhase('SCANNING', `Found ${count} cube${count !== 1 ? 's' : ''}`);
+
+    // Build queue from Gemini-identified positions
+    // Map returned cubes to nearest known cube indices
+    const queue = [];
+    if (result.cubes?.length) {
+      for (const cube of result.cubes) {
+        let bestIdx = 0;
+        let bestDist = Infinity;
+        cubePositions.forEach((cp, i) => {
+          const d = Math.hypot(cp.x - cube.x, cp.y - cube.y);
+          if (d < bestDist) { bestDist = d; bestIdx = i; }
+        });
+        if (!queue.includes(bestIdx)) queue.push(bestIdx);
+      }
+    } else {
+      queue.push(0, 1, 2, 3);
+    }
+
+    simState.cubeQueue = queue;
+    simState.phase = 'IDLE';
+    setPhase('IDLE', `Queued ${queue.length} cubes.`);
+
+  } catch (err) {
+    setPhase('ERROR', err.message.slice(0, 80));
+    showError('Gemini: ' + err.message);
+  } finally {
+    btnScan.disabled = false;
+  }
+});
+
+btnAuto.addEventListener('click', () => {
+  simState.autoDemo = !simState.autoDemo;
+  btnAuto.classList.toggle('btn-active', simState.autoDemo);
+  if (simState.autoDemo) {
+    simState.cubeQueue = [0, 1, 2, 3];
+    simState.phase = 'IDLE';
+    setPhase('IDLE', 'Auto demo running...');
+  } else {
+    simState.cubeQueue = [];
+    simState.phase = 'IDLE';
+    setPhase('IDLE', 'Paused.');
+  }
+});
+
+btnReset.addEventListener('click', () => {
+  simState.phase = 'IDLE';
+  simState.cubeQueue = [];
+  simState.currentCube = null;
+  simState.autoDemo = false;
+  simState._graspTimer = 0;
+  simState._placeTimer = 0;
+  btnAuto.classList.remove('btn-active');
+  targetMarker.visible = false;
+  setGripper(true);
+  cubePositions = CUBE_POSITIONS.map(p => ({ x: p.x, y: p.y, z: p.z }));
+
+  // Reset qpos to home pose
+  if (simState.initialQpos && model && data) {
+    for (let i = 0; i < simState.initialQpos.length; i++) {
+      data.qpos[i] = simState.initialQpos[i];
+    }
+    for (let i = 0; i < model.nv; i++) data.qvel[i] = 0;
+    mujoco.mj_forward(model, data);
+  }
+  setPhase('IDLE', 'Scene reset.');
+});
+
+speedSlider.addEventListener('input', () => {
+  simState.speed = parseFloat(speedSlider.value);
+  speedVal.textContent = simState.speed + '×';
+});
+
+// ── Init sequence ─────────────────────────────────────────────────────
+async function init() {
+  setPhase('LOADING', 'Initializing...');
+
+  // Step 1: Load WASM
+  stepActive('step-wasm');
+  let mj;
+  try {
+    mj = await loadMuJoCo();
+    mujoco = mj;
+    stepDone('step-wasm');
+  } catch (err) {
+    stepError('step-wasm', err.message);
+    setPhase('ERROR', err.message);
+    showError(err.message + ' — Check your internet connection or try again.');
+    return;
+  }
+
+  // Step 2: Fetch model + VFS (both happen inside loadRobotModel)
+  stepActive('step-model');
+  let modelData;
+  try {
+    modelData = await loadRobotModel(mj);
+    stepDone('step-model');
+  } catch (err) {
+    stepError('step-model', 'Model fetch failed: ' + err.message);
+    setPhase('ERROR', 'Model load failed.');
+    showError(err.message);
+    return;
+  }
+
+  // Step 3: VFS built as part of model load
+  stepActive('step-vfs');
+  stepDone('step-vfs');
+
+  // Step 4: Init physics
+  stepActive('step-physics');
+  try {
+    model = modelData.model;
+    data  = modelData.data;
+
+    // Store initial qpos
+    simState.initialQpos = [...data.qpos];
+
+    // Set home pose for arm joints (7 arm + 2 finger = 9 actuated joints)
+    const armQpos = HOME_POS;
+    for (let i = 0; i < Math.min(armQpos.length, model.nq); i++) {
+      data.qpos[i] = armQpos[i];
+    }
+    mujoco.mj_forward(model, data);
+
+    // Find TCP site
+    siteId = findSiteId(model, 'tcp');
+
+    // Find gripper joints (finger_joint1, finger_joint2)
+    const gj1 = findJointId(model, 'finger_joint1');
+    const gj2 = findJointId(model, 'finger_joint2');
+    if (gj1 >= 0) gripperJointIds.push(gj1);
+    if (gj2 >= 0) gripperJointIds.push(gj2);
+
+    // Build Three.js body groups
+    bodyGroups = buildBodyGroups(mujoco, model);
+    syncBodies(model, data, bodyGroups);
+
+    stepDone('step-physics');
+    stepDone('step-ready');
+
+    // Hide loading overlay
+    loadingOverlay.classList.add('hidden');
+
+    // Enable controls
+    btnScan.disabled  = false;
+    btnAuto.disabled  = false;
+    btnReset.disabled = false;
+
+    setPhase('IDLE', 'Physics ready. Press Scan & Pick or Auto Demo.');
+
+    // Start the loop
+    startLoop();
+  } catch (err) {
+    stepError('step-physics', err.message);
+    setPhase('ERROR', 'Physics init failed.');
+    showError(err.message);
+    return;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

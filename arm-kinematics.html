@@ -317,9 +317,46 @@ button.active:hover {
   border-radius: 0;
 }
 
+/* ── Mode toggle ─────────────────────────────── */
+.mode-toggle {
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Canvas hint ─────────────────────────────── */
+#canvas-hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(22, 22, 26, 0.92);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 7px 14px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  white-space: nowrap;
+}
+
+#canvas-hint.visible {
+  opacity: 1;
+}
+
+/* ── Disabled section ────────────────────────── */
+.section--disabled {
+  opacity: 0.35;
+  pointer-events: none;
+  user-select: none;
+}
+
 /* ── Reduced motion ──────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
-  button, input[type=range]::-webkit-slider-thumb {
+  button, input[type=range]::-webkit-slider-thumb, #canvas-hint {
     transition: none;
   }
 }
@@ -329,6 +366,7 @@ button.active:hover {
 <div id="app">
   <div id="canvas-wrap">
     <canvas id="c"></canvas>
+    <div id="canvas-hint" aria-live="polite"></div>
   </div>
   <aside id="sidebar">
     <div class="sidebar-header">
@@ -336,8 +374,17 @@ button.active:hover {
       <p>Forward &amp; Inverse Kinematics</p>
     </div>
 
-    <!-- Joint Angles -->
+    <!-- Mode Toggle -->
     <div class="section">
+      <div class="section-label">Mode</div>
+      <div class="mode-toggle" role="group" aria-label="Control mode">
+        <button id="btn-fk-mode" class="active" aria-pressed="true">FK — Sliders</button>
+        <button id="btn-ik-mode" aria-pressed="false">IK — Click</button>
+      </div>
+    </div>
+
+    <!-- Joint Angles -->
+    <div class="section" id="section-joints">
       <div class="section-label">Joint Angles</div>
       <div class="joint-row">
         <div class="joint-header">
@@ -413,8 +460,7 @@ button.active:hover {
       <div class="section-label">Inverse Kinematics</div>
 
       <div class="btn-row" style="margin-bottom:12px">
-        <button id="btn-ik" class="btn-demo">IK Mode</button>
-        <button id="btn-clear-target">Clear</button>
+        <button id="btn-clear-target" style="flex:1">Clear Target</button>
       </div>
 
       <div id="ik-status-row" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
@@ -1103,13 +1149,42 @@ function pushTrace(pose) {
   }
 }
 
+// ── Mode management ───────────────────────────────────────────────────
+function setMode(mode) {
+  const fkBtn = document.getElementById('btn-fk-mode');
+  const ikBtn = document.getElementById('btn-ik-mode');
+  const jointsSection = document.getElementById('section-joints');
+  const ikSection = document.getElementById('ik-section');
+
+  if (mode === 'fk') {
+    fkBtn.classList.add('active');    fkBtn.setAttribute('aria-pressed', 'true');
+    ikBtn.classList.remove('active'); ikBtn.setAttribute('aria-pressed', 'false');
+    jointsSection.classList.remove('section--disabled');
+    ikSection.classList.add('section--disabled');
+  } else {
+    ikBtn.classList.add('active');    ikBtn.setAttribute('aria-pressed', 'true');
+    fkBtn.classList.remove('active'); fkBtn.setAttribute('aria-pressed', 'false');
+    jointsSection.classList.add('section--disabled');
+    ikSection.classList.remove('section--disabled');
+  }
+}
+
+let hintTimeout = null;
+function showHint(text) {
+  const el = document.getElementById('canvas-hint');
+  el.textContent = text;
+  el.classList.add('visible');
+  clearTimeout(hintTimeout);
+  hintTimeout = setTimeout(() => el.classList.remove('visible'), 2000);
+}
+
 // ── IK mode helpers ───────────────────────────────────────────────────
 function enableIK() {
   ikMode = true;
-  // Set targetAngles to current angles so there's no jump on first activation
   targetAngles = [...angles];
-  document.getElementById('btn-ik').classList.add('active');
+  setMode('ik');
   canvas.style.cursor = 'crosshair';
+  showHint('IK Mode — drag to place target');
   updateIKStatus();
 }
 
@@ -1118,7 +1193,7 @@ function disableIK() {
   target = null;
   ikStatus = 'idle';
   targetAngles = [...angles];
-  document.getElementById('btn-ik').classList.remove('active');
+  setMode('fk');
   canvas.style.cursor = 'default';
   updateIKStatus();
 }
@@ -1234,10 +1309,13 @@ document.getElementById('btn-reset').addEventListener('click', () => {
   demoT = 0;
 });
 
-document.getElementById('btn-ik').addEventListener('click', () => {
-  if (ikMode) {
-    disableIK();
-  } else {
+document.getElementById('btn-fk-mode').addEventListener('click', () => {
+  if (ikMode) disableIK();
+  if (autoDemo) stopDemo();
+});
+
+document.getElementById('btn-ik-mode').addEventListener('click', () => {
+  if (!ikMode) {
     if (autoDemo) stopDemo();
     enableIK();
   }
@@ -1275,6 +1353,7 @@ function stopDemo() {
 window.addEventListener('resize', resize);
 
 // ── Init ─────────────────────────────────────────────────────────────
+setMode('fk');
 resize();
 requestAnimationFrame(animate);
 </script>

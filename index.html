@@ -542,12 +542,41 @@ footer {
 
   </div>
 
+  <div style="margin-top: 48px; padding-top: 32px; border-top: 1px solid var(--border);">
+    <div class="path-label" style="margin-bottom: 20px;">Beyond the Learning Path</div>
+    <div class="card available" onclick="window.location='lab/index.html'" style="grid-column: 1 / -1; display: flex; gap: 32px; flex-wrap: wrap; align-items: center;">
+      <div style="flex: 1; min-width: 200px;">
+        <div class="card-top">
+          <span class="card-num" style="background: rgba(212,136,74,0.1); border-color: var(--accent); color: var(--accent);">Lab</span>
+          <span class="status-badge live">Available</span>
+        </div>
+        <div class="card-title">MuJoCo Lab — Real Physics</div>
+        <div class="card-desc">A Franka Emika Panda running physics-accurate simulation in the browser via WebAssembly. Point a Gemini vision model at the scene and watch it identify objects and direct the arm to pick them up.</div>
+        <ul class="card-teaches" style="margin-bottom: 20px;">
+          <li>MuJoCo physics engine via WebAssembly</li>
+          <li>Real robot model (Franka Panda) from MuJoCo Menagerie</li>
+          <li>Gemini vision layer for object detection</li>
+          <li>What production robotics tooling actually looks like</li>
+        </ul>
+        <a href="lab/index.html" class="card-launch" aria-label="Launch MuJoCo Lab">
+          Launch →
+        </a>
+      </div>
+      <div style="flex-shrink: 0; opacity: 0.7; font-size: 11px; color: var(--text-mute); max-width: 180px; line-height: 1.6;">
+        Requires internet connection to load MuJoCo WASM from CDN. Gemini features require a Google AI API key.
+      </div>
+    </div>
+  </div>
+
   <footer>
     <span class="footer-note">All simulations run entirely in-browser — no server, no installation.</span>
     <div class="tech-stack">
       <span class="tech-tag">Canvas 2D</span>
       <span class="tech-tag">Vanilla JS</span>
       <span class="tech-tag">No dependencies</span>
+      <span class="tech-tag">MuJoCo WASM</span>
+      <span class="tech-tag">Three.js</span>
+      <span class="tech-tag">Gemini</span>
     </div>
   </footer>
 
