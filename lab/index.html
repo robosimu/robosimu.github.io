@@ -1340,11 +1340,13 @@ x increases to the right, y increases upward.`;
 
 // ── Persist API key ───────────────────────────────────────────────────
 const STORAGE_KEY = 'robosimu_gemini_key';
+const isValidKey = v => /^AIza[0-9A-Za-z_-]{35}$/.test(v.trim());
 const savedKey = localStorage.getItem(STORAGE_KEY);
-if (savedKey) apiKeyInput.value = savedKey;
+if (savedKey && isValidKey(savedKey)) apiKeyInput.value = savedKey;
+else localStorage.removeItem(STORAGE_KEY);
 apiKeyInput.addEventListener('input', () => {
   const v = apiKeyInput.value.trim();
-  if (v) localStorage.setItem(STORAGE_KEY, v);
+  if (isValidKey(v)) localStorage.setItem(STORAGE_KEY, v);
   else localStorage.removeItem(STORAGE_KEY);
 });
 
