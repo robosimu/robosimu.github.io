@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16161a">
+<title>Pick &amp; Place — Task Sequencing</title>
+<link rel="apple-touch-icon" href="data:,">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #16161a;
+  --surface:   #1e1e24;
+  --raised:    #252530;
+  --border:    #2e2e3a;
+  --text:      #e8e8e0;
+  --text-sec:  #8888a0;
+  --text-mute: #555568;
+  --arm:       #d4884a;
+  --joint:     #f0a060;
+  --tcp:       #e05050;
+  --accent:    #d4884a;
+  --ok:        #60c080;
+  --warn:      #e0b040;
+  --sidebar:   280px;
+  --gap:       16px;
+  --radius:    2px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100dvh;
+  width: 100vw;
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Sidebar ─────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+}
+
+.sidebar-header {
+  padding: 18px var(--gap) 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
+}
+
+.sidebar-header h1 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 3px;
+}
+
+.section {
+  padding: var(--gap);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 12px;
+}
+
+/* ── State list ──────────────────────────────── */
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  background: var(--border);
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.state-row.state-current { color: var(--accent); }
+.state-row.state-current .state-dot { background: var(--accent); }
+.state-row.state-past { color: var(--text-mute); }
+.state-row.state-past .state-dot { background: var(--ok); }
+
+/* ── Mission ──────────────────────────────────── */
+.progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 0;
+  margin-top: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.4s ease;
+}
+
+.block-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 0;
+  opacity: 0.35;
+  transition: opacity 0.3s;
+}
+
+.block-dot.active {
+  opacity: 1;
+  box-shadow: 0 0 6px currentColor;
+}
+
+.block-dot.placed { opacity: 0.6; }
+
+/* ── Buttons ─────────────────────────────────── */
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 14px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  background: var(--raised);
+  color: var(--text-sec);
+  flex: 1;
+}
+
+button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.active {
+  background: var(--arm);
+  border-color: var(--arm);
+  color: #0f0f0f;
+}
+
+button.active:hover {
+  background: var(--joint);
+  border-color: var(--joint);
+}
+
+/* ── Range inputs ────────────────────────────── */
+.joint-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sec);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.joint-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--arm);
+  min-width: 52px;
+  text-align: right;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 0;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--joint);
+  cursor: pointer;
+  border: 2px solid var(--raised);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 0 transparent;
+  transition: box-shadow 0.15s;
+}
+
+input[type=range]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 2px var(--accent);
+}
+
+input[type=range]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--joint);
+  cursor: pointer;
+  border: 2px solid var(--raised);
+}
+
+input[type=range]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Legend ──────────────────────────────────── */
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+/* ── Back link ───────────────────────────────── */
+.back-link {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  text-decoration: none;
+  margin-bottom: 10px;
+  padding: 4px 0;
+}
+
+.back-link:hover { color: var(--accent); }
+
+.back-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Reduced motion ──────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  button, input[type=range]::-webkit-slider-thumb,
+  .progress-fill, .block-dot, .state-dot {
+    transition: none;
+  }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+  </div>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <a href="index.html" class="back-link">← Learning Path</a>
+      <h1>Pick &amp; Place</h1>
+      <p>Level 3 — Task Sequencing</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">State Machine</div>
+      <div id="state-list"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Mission</div>
+      <div id="mission-info"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Current Phase</div>
+      <p id="phase-desc" style="font-size:12px;color:var(--text-sec);line-height:1.6">—</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Gripper</div>
+      <div id="gripper-indicator"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Controls</div>
+      <div class="btn-row">
+        <button id="btn-auto" class="active">Auto Run</button>
+        <button id="btn-reset">Reset</button>
+      </div>
+      <div style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span class="joint-name">Speed</span>
+          <span id="v-speed" class="joint-val">1.0×</span>
+        </div>
+        <input type="range" id="s-speed" min="0.3" max="3" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Legend</div>
+      <ul class="legend-list">
+        <li class="legend-item"><div style="width:14px;height:14px;background:#b83c3c;flex-shrink:0"></div><span>Block A (red)</span></li>
+        <li class="legend-item"><div style="width:14px;height:14px;background:#3a72b8;flex-shrink:0"></div><span>Block B (blue)</span></li>
+        <li class="legend-item"><div style="width:14px;height:14px;background:#3d8c4a;flex-shrink:0"></div><span>Block C (green)</span></li>
+        <li class="legend-item"><div style="width:14px;height:14px;background:none;border:1px dashed #555568;flex-shrink:0"></div><span>Drop zone / tray</span></li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+// ── Constants ────────────────────────────────────────────────────────
+const L1 = 300, L2 = 240, L3 = 120;
+const TABLE_Y      = -185;
+const BLOCK_W      = 48;
+const BLOCK_H      = 38;
+const HOVER_HEIGHT = 90;
+const LIFT_HEIGHT  = 180;
+const DROP_CX      = 610;
+const DROP_W       = 100;
+const HOME_ANGLES  = [82, -88, 6];
+
+const BLOCK_DEFS = [
+  { x: 210, color: '#b83c3c', label: 'A' },
+  { x: 360, color: '#3a72b8', label: 'B' },
+  { x: 510, color: '#3d8c4a', label: 'C' },
+];
+
+const STATE_ORDER = ['IDLE','ABOVE_PICK','DESCEND','GRIP','LIFT','ABOVE_PLACE','PLACE','RELEASE'];
+
+const STATE_LABELS = {
+  IDLE:        'Idle / Home',
+  ABOVE_PICK:  'Hover Above Block',
+  DESCEND:     'Descend to Grasp',
+  GRIP:        'Close Gripper',
+  LIFT:        'Lift Block',
+  ABOVE_PLACE: 'Transport to Zone',
+  PLACE:       'Descend to Place',
+  RELEASE:     'Open Gripper',
+};
+
+const STATE_DESCS = {
+  IDLE:        'At rest. Waiting for next target.',
+  ABOVE_PICK:  'Moving above target block. Preparing approach.',
+  DESCEND:     'Descending to grasp position.',
+  GRIP:        'Closing gripper. Securing block.',
+  LIFT:        'Lifting block to transport height.',
+  ABOVE_PLACE: 'Transporting to drop zone.',
+  PLACE:       'Descending to place position.',
+  RELEASE:     'Opening gripper. Releasing block.',
+};
+
+// ── State ────────────────────────────────────────────────────────────
+let state = 'IDLE';
+let stateTimer = 0;
+let currentBlockIdx = 0;
+let heldBlock = null;
+let placedCount = 0;
+let autoRun = true;
+let speed = 1.0;
+let gripT = 0;
+let lastTS = null;
+let pulseT = 0;
+let scale = 1;
+let ox = 0, oy = 0;
+
+let angles = [...HOME_ANGLES];
+let targetAngles = [...HOME_ANGLES];
+
+let blocks = BLOCK_DEFS.map((d, i) => ({
+  ...d,
+  id: i,
+  worldY: TABLE_Y,
+  placed: false,
+  held: false,
+  placedX: 0,
+  placedY: 0,
+}));
+
+// ── DOM ──────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ── Kinematics ───────────────────────────────────────────────────────
+function fk(a1, a2, a3) {
+  const r1 = a1 * Math.PI / 180;
+  const r2 = (a1 + a2) * Math.PI / 180;
+  const r3 = (a1 + a2 + a3) * Math.PI / 180;
+  const j0 = { x: 0, y: 0 };
+  const j1 = { x: L1 * Math.cos(r1), y: L1 * Math.sin(r1) };
+  const j2 = { x: j1.x + L2 * Math.cos(r2), y: j1.y + L2 * Math.sin(r2) };
+  const ee = { x: j2.x + L3 * Math.cos(r3), y: j2.y + L3 * Math.sin(r3) };
+  return { j0, j1, j2, ee, r3 };
+}
+
+function ikSolve(tx, ty) {
+  const phi = -Math.PI / 2;
+  const wristX = tx;
+  const wristY = ty + L3;
+
+  const d2 = wristX * wristX + wristY * wristY;
+  const c2 = (d2 - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+  if (c2 < -1 || c2 > 1) return null;
+
+  const s2 = Math.sqrt(1 - c2 * c2);
+  const t2 = Math.atan2(s2, c2);
+  const t1 = Math.atan2(wristY, wristX) - Math.atan2(L2 * s2, L1 + L2 * c2);
+  const t3 = phi - t1 - t2;
+
+  return [
+    t1 * 180 / Math.PI,
+    t2 * 180 / Math.PI,
+    t3 * 180 / Math.PI,
+  ];
+}
+
+function lerpAngle(a, b, t) {
+  const d = ((b - a + 540) % 360) - 180;
+  return a + d * t;
+}
+
+// ── Canvas helpers ───────────────────────────────────────────────────
+function wx(x) { return ox + x * scale; }
+function wy(y) { return oy - y * scale; }
+
+// ── Resize ───────────────────────────────────────────────────────────
+function resize() {
+  const wrap = canvas.parentElement;
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  scale = Math.min(W, H) / 1300;
+  ox = W * 0.22;
+  oy = H * 0.58;
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────
+function drawGrid() {
+  const W = canvas.width / (window.devicePixelRatio || 1);
+  const H = canvas.height / (window.devicePixelRatio || 1);
+  const GRID = 100;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+
+  const xStart = Math.ceil((-ox / scale) / GRID) * GRID;
+  const xEnd   = Math.floor(((W - ox) / scale) / GRID) * GRID;
+  for (let x = xStart; x <= xEnd; x += GRID) {
+    ctx.beginPath();
+    ctx.moveTo(wx(x), 0);
+    ctx.lineTo(wx(x), H);
+    ctx.stroke();
+  }
+
+  const yStart = Math.ceil(((oy - H) / scale) / GRID) * GRID;
+  const yEnd   = Math.floor((oy / scale) / GRID) * GRID;
+  for (let y = yStart; y <= yEnd; y += GRID) {
+    ctx.beginPath();
+    ctx.moveTo(0, wy(y));
+    ctx.lineTo(W, wy(y));
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, wy(0)); ctx.lineTo(W, wy(0));
+  ctx.moveTo(wx(0), 0); ctx.lineTo(wx(0), H);
+  ctx.stroke();
+}
+
+function drawTable() {
+  const x0 = wx(120), x1 = wx(720);
+  const yTop = wy(TABLE_Y);
+  const yBot = wy(TABLE_Y - 18);
+
+  // Table surface
+  ctx.fillStyle = '#2a2a32';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 10;
+  ctx.fillRect(x0, yTop, x1 - x0, yBot - yTop);
+  ctx.shadowBlur = 0;
+
+  // Top edge highlight
+  ctx.strokeStyle = '#3a3a48';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, yTop);
+  ctx.lineTo(x1, yTop);
+  ctx.stroke();
+
+  // Legs
+  const legW = 6 * scale;
+  const legH = 120 * scale;
+  ctx.fillStyle = '#252530';
+  ctx.fillRect(wx(160) - legW / 2, yBot, legW, legH);
+  ctx.fillRect(wx(660) - legW / 2, yBot, legW, legH);
+}
+
+function drawDropZone() {
+  const bx = wx(DROP_CX - DROP_W / 2);
+  const by = wy(TABLE_Y + 4 * BLOCK_H);
+  const bw = DROP_W * scale;
+  const bh = wy(TABLE_Y) - wy(TABLE_Y + 4 * BLOCK_H);
+
+  const isActive = (state === 'ABOVE_PLACE' || state === 'PLACE' || state === 'RELEASE');
+
+  if (isActive) {
+    ctx.shadowColor = 'rgba(210,130,40,0.35)';
+    ctx.shadowBlur = 16;
+  }
+
+  ctx.strokeStyle = isActive ? 'rgba(210,140,50,0.75)' : '#444458';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([5, 4]);
+  ctx.strokeRect(bx, by, bw, bh);
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = isActive ? 'rgba(210,140,50,0.45)' : '#444458';
+  ctx.font = `bold ${Math.max(8, scale * 10)}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim()}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('DROP ZONE', wx(DROP_CX), by - 4 * scale);
+}
+
+function adjustColorBrightness(hex, amount) {
+  const num = parseInt(hex.slice(1), 16);
+  const r = Math.min(255, (num >> 16) + amount);
+  const g = Math.min(255, ((num >> 8) & 0xff) + amount);
+  const b = Math.min(255, (num & 0xff) + amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+function darkenColor(hex, amount) {
+  const num = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, (num >> 16) - amount);
+  const g = Math.max(0, ((num >> 8) & 0xff) - amount);
+  const b = Math.max(0, (num & 0xff) - amount);
+  return `rgb(${r},${g},${b})`;
+}
+
+function drawBlockShape(cx, cy, color, label, alpha) {
+  const hw = BLOCK_W / 2 * scale;
+  const hh = BLOCK_H / 2 * scale;
+  const pcx = wx(cx);
+  const pcy = wy(cy);
+
+  ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 6;
+  ctx.fillRect(pcx - hw, pcy - hh, hw * 2, hh * 2);
+  ctx.shadowBlur = 0;
+
+  // Top face highlight
+  ctx.fillStyle = adjustColorBrightness(color, 35);
+  ctx.fillRect(pcx - hw, pcy - hh, hw * 2, 6 * scale);
+
+  // Label
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = `bold ${Math.max(10, scale * 13)}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim()}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, pcx, pcy);
+  ctx.globalAlpha = 1;
+}
+
+function drawBlocks(pose) {
+  const targetBlock = blocks[currentBlockIdx];
+
+  // Placed blocks in drop zone
+  for (const block of blocks) {
+    if (!block.placed) continue;
+    drawBlockShape(block.placedX, block.placedY, darkenColor(block.color, 20), block.label);
+  }
+
+  // Blocks on table
+  for (const block of blocks) {
+    if (block.placed || block.held) continue;
+    const cy = TABLE_Y + BLOCK_H / 2;
+
+    // Pulse outline for next target
+    const isNextTarget = autoRun && block === targetBlock && !block.placed && state === 'IDLE';
+    if (isNextTarget) {
+      const pulseAlpha = Math.sin(pulseT * 2) * 0.5 + 0.5;
+      ctx.strokeStyle = `rgba(230,180,60,${pulseAlpha.toFixed(3)})`;
+      ctx.lineWidth = 2;
+      const hw = (BLOCK_W / 2 + 4) * scale;
+      const hh = (BLOCK_H / 2 + 4) * scale;
+      ctx.strokeRect(wx(block.x) - hw, wy(cy) - hh, hw * 2, hh * 2);
+    }
+
+    drawBlockShape(block.x, cy, block.color, block.label);
+  }
+
+  // Held block at TCP
+  if (heldBlock) {
+    drawBlockShape(pose.ee.x, pose.ee.y, heldBlock.color, heldBlock.label);
+  }
+}
+
+function drawLink(x1, y1, x2, y2, widthMm, color) {
+  const cx1 = wx(x1), cy1 = wy(y1);
+  const cx2 = wx(x2), cy2 = wy(y2);
+  const angle = Math.atan2(cy2 - cy1, cx2 - cx1);
+  const w1 = widthMm * scale;
+  const w2 = w1 * 0.52;
+  const dx1 = Math.sin(angle) * w1;
+  const dy1 = -Math.cos(angle) * w1;
+  const dx2 = Math.sin(angle) * w2;
+  const dy2 = -Math.cos(angle) * w2;
+
+  ctx.beginPath();
+  ctx.moveTo(cx1 + dx1, cy1 + dy1);
+  ctx.lineTo(cx2 + dx2, cy2 + dy2);
+  ctx.lineTo(cx2 - dx2, cy2 - dy2);
+  ctx.lineTo(cx1 - dx1, cy1 - dy1);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,200,100,0.18)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawJoint(px, py, r) {
+  const cx = wx(px), cy = wy(py);
+  const rPx = r * scale;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+  ctx.fillStyle = '#2a2030';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#f0a060';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, rPx * 0.42, 0, Math.PI * 2);
+  ctx.fillStyle = '#f0a060';
+  ctx.fill();
+}
+
+function drawBase() {
+  const cx = wx(0), cy = wy(0);
+  const w = 22 * scale, h = 14 * scale;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - w, cy + h * 0.3);
+  ctx.lineTo(cx + w, cy + h * 0.3);
+  ctx.lineTo(cx + w * 0.6, cy + h);
+  ctx.lineTo(cx - w * 0.6, cy + h);
+  ctx.closePath();
+  ctx.fillStyle = '#333340';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#444458';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * 8 * scale - 4 * scale, cy + h * 0.35);
+    ctx.lineTo(cx + i * 8 * scale + 4 * scale, cy + h * 0.95);
+    ctx.stroke();
+  }
+}
+
+function drawArm(pose) {
+  const { j0, j1, j2, ee } = pose;
+  drawLink(j0.x, j0.y, j1.x, j1.y, 14, '#b06e28');
+  drawLink(j1.x, j1.y, j2.x, j2.y, 10, '#b86828');
+  drawLink(j2.x, j2.y, ee.x, ee.y,  7, '#c06020');
+  drawBase();
+  drawJoint(j1.x, j1.y,  9);
+  drawJoint(j2.x, j2.y,  7);
+  drawJoint(j0.x, j0.y, 11);
+}
+
+function drawGripper(pose) {
+  const { ee, r3 } = pose;
+  const cx = wx(ee.x);
+  const cy = wy(ee.y);
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-r3);
+
+  const bodyW = 10 * scale, bodyH = 6 * scale;
+  const fingerW = 4 * scale;
+  const fingerH = (8 + gripT * 4) * scale;
+  const offset = (9 - gripT * 6) * scale;
+
+  if (gripT > 0.5) {
+    ctx.shadowColor = 'rgba(224,80,80,0.3)';
+    ctx.shadowBlur = 6;
+  }
+
+  ctx.fillStyle = '#d03030';
+  ctx.fillRect(-bodyW / 2, -bodyH / 2, bodyW, bodyH);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#c04040';
+  // Left finger
+  ctx.fillRect(-offset - fingerW, -bodyH / 2 - fingerH, fingerW, fingerH);
+  // Right finger
+  ctx.fillRect(offset, -bodyH / 2 - fingerH, fingerW, fingerH);
+
+  ctx.restore();
+}
+
+function drawRuler() {
+  const H = canvas.height / (window.devicePixelRatio || 1);
+  const margin = 20;
+  const barLen = 100 * scale;
+  const y = H - margin;
+  const x0 = margin;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x0, y - 4);
+  ctx.lineTo(x0, y + 4);
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x0 + barLen, y);
+  ctx.moveTo(x0 + barLen, y - 4);
+  ctx.lineTo(x0 + barLen, y + 4);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('100 mm', x0 + barLen / 2, y - 6);
+}
+
+function draw(pose) {
+  const W = canvas.width / (window.devicePixelRatio || 1);
+  const H = canvas.height / (window.devicePixelRatio || 1);
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#16161a';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  drawTable();
+  drawDropZone();
+  drawBlocks(pose);
+  drawArm(pose);
+  drawGripper(pose);
+  drawRuler();
+}
+
+// ── State machine ────────────────────────────────────────────────────
+function resetBlocks() {
+  blocks = BLOCK_DEFS.map((d, i) => ({
+    ...d,
+    id: i,
+    worldY: TABLE_Y,
+    placed: false,
+    held: false,
+    placedX: 0,
+    placedY: 0,
+  }));
+  currentBlockIdx = 0;
+  placedCount = 0;
+  heldBlock = null;
+  gripT = 0;
+  state = 'IDLE';
+  stateTimer = 0;
+}
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const dt = lastTS === null ? 0 : Math.min(ts - lastTS, 80);
+  lastTS = ts;
+  pulseT += dt * 0.003;
+
+  const pose = fk(angles[0], angles[1], angles[2]);
+  const tcp = pose.ee;
+
+  const block = blocks[currentBlockIdx];
+
+  switch (state) {
+    case 'IDLE':
+      targetAngles = [...HOME_ANGLES];
+      if (autoRun) {
+        stateTimer += dt;
+        if (stateTimer > 800 / speed && block && !block.placed) {
+          state = 'ABOVE_PICK';
+          stateTimer = 0;
+        }
+        if (blocks.every(b => b.placed)) {
+          if (stateTimer > 1800 / speed) resetBlocks();
+        }
+      }
+      break;
+
+    case 'ABOVE_PICK': {
+      const sol = ikSolve(block.x, TABLE_Y + BLOCK_H + HOVER_HEIGHT);
+      if (sol) targetAngles = sol;
+      const dy = tcp.y - (TABLE_Y + BLOCK_H + HOVER_HEIGHT);
+      const dx = tcp.x - block.x;
+      if (Math.sqrt(dx * dx + dy * dy) < 14) {
+        state = 'DESCEND';
+        stateTimer = 0;
+      }
+      break;
+    }
+
+    case 'DESCEND': {
+      const sol = ikSolve(block.x, TABLE_Y + BLOCK_H / 2);
+      if (sol) targetAngles = sol;
+      const dy = tcp.y - (TABLE_Y + BLOCK_H / 2);
+      const dx = tcp.x - block.x;
+      if (Math.sqrt(dx * dx + dy * dy) < 10) {
+        state = 'GRIP';
+        stateTimer = 0;
+        block.held = true;
+        heldBlock = block;
+      }
+      break;
+    }
+
+    case 'GRIP':
+      stateTimer += dt * speed;
+      gripT = Math.min(stateTimer / 350, 1);
+      if (gripT >= 1) {
+        state = 'LIFT';
+        stateTimer = 0;
+      }
+      break;
+
+    case 'LIFT': {
+      const sol = ikSolve(block.x, TABLE_Y + LIFT_HEIGHT);
+      if (sol) targetAngles = sol;
+      const dy = tcp.y - (TABLE_Y + LIFT_HEIGHT);
+      const dx = tcp.x - block.x;
+      if (Math.sqrt(dx * dx + dy * dy) < 14) {
+        state = 'ABOVE_PLACE';
+        stateTimer = 0;
+      }
+      break;
+    }
+
+    case 'ABOVE_PLACE': {
+      const sol = ikSolve(DROP_CX, TABLE_Y + LIFT_HEIGHT);
+      if (sol) targetAngles = sol;
+      const dy = tcp.y - (TABLE_Y + LIFT_HEIGHT);
+      const dx = tcp.x - DROP_CX;
+      if (Math.sqrt(dx * dx + dy * dy) < 14) {
+        state = 'PLACE';
+        stateTimer = 0;
+      }
+      break;
+    }
+
+    case 'PLACE': {
+      const placeY = TABLE_Y + placedCount * BLOCK_H + BLOCK_H / 2;
+      const sol = ikSolve(DROP_CX, placeY);
+      if (sol) targetAngles = sol;
+      const dy = tcp.y - placeY;
+      const dx = tcp.x - DROP_CX;
+      if (Math.sqrt(dx * dx + dy * dy) < 10) {
+        state = 'RELEASE';
+        stateTimer = 0;
+      }
+      break;
+    }
+
+    case 'RELEASE':
+      stateTimer += dt * speed;
+      gripT = Math.max(1 - stateTimer / 350, 0);
+      if (gripT <= 0) {
+        const placeY = TABLE_Y + placedCount * BLOCK_H + BLOCK_H / 2;
+        block.placed = true;
+        block.held = false;
+        block.placedX = DROP_CX;
+        block.placedY = placeY;
+        heldBlock = null;
+        placedCount++;
+        currentBlockIdx++;
+        state = 'IDLE';
+        stateTimer = 0;
+      }
+      break;
+  }
+
+  // Smooth angle interpolation
+  const k = 1 - Math.pow(0.002, dt / 1000 * 9 * speed);
+  for (let i = 0; i < 3; i++) {
+    angles[i] = lerpAngle(angles[i], targetAngles[i], k);
+  }
+
+  const finalPose = fk(angles[0], angles[1], angles[2]);
+  draw(finalPose);
+  updateUI();
+}
+
+// ── UI updates ───────────────────────────────────────────────────────
+function updateUI() {
+  renderStateList();
+  renderMission();
+  renderPhaseDesc();
+  renderGripper();
+}
+
+function renderStateList() {
+  const el = document.getElementById('state-list');
+  const currentIdx = STATE_ORDER.indexOf(state);
+  el.innerHTML = STATE_ORDER.map((s, i) => {
+    const isCurrent = i === currentIdx;
+    const isPast = i < currentIdx;
+    return `<div class="state-row${isCurrent ? ' state-current' : ''}${isPast ? ' state-past' : ''}">
+      <div class="state-dot"></div>
+      <span>${STATE_LABELS[s]}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderMission() {
+  const el = document.getElementById('mission-info');
+  const dots = blocks.map(b => {
+    const isActive = b === blocks[currentBlockIdx] && state !== 'IDLE';
+    const cls = b.placed ? 'placed' : (isActive ? 'active' : '');
+    return `<div class="block-dot ${cls}" style="background:${b.color}"></div>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;margin-bottom:10px">${dots}</div>
+    <div style="font-size:12px;color:var(--text-sec)">${placedCount} of ${blocks.length} placed</div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${placedCount / blocks.length * 100}%"></div></div>
+  `;
+}
+
+function renderPhaseDesc() {
+  document.getElementById('phase-desc').textContent = STATE_DESCS[state] || '—';
+}
+
+function renderGripper() {
+  const el = document.getElementById('gripper-indicator');
+  const openPx = Math.round((1 - gripT) * 12) + 2;
+  const active = gripT > 0.5 ? '#d03030' : 'var(--raised)';
+  const label = gripT < 0.1 ? 'OPEN' : gripT > 0.9 ? 'CLOSED' : 'MOVING';
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:4px;justify-content:center;padding:8px 0">
+      <div style="width:6px;height:20px;background:${active};border:1px solid var(--border)"></div>
+      <div style="width:${openPx}px;height:4px"></div>
+      <div style="width:6px;height:20px;background:${active};border:1px solid var(--border)"></div>
+    </div>
+    <div style="text-align:center;font-size:10px;font-family:var(--font-mono);color:var(--text-mute)">${label}</div>
+  `;
+}
+
+// ── Canvas interaction ───────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+  const wx_ = (px - ox) / scale;
+  const wy_ = -(py - oy) / scale;
+
+  for (const block of blocks) {
+    if (block.placed || block.held) continue;
+    const bx = block.x, by = TABLE_Y + BLOCK_H / 2;
+    if (Math.abs(wx_ - bx) < BLOCK_W / 2 + 8 && Math.abs(wy_ - by) < BLOCK_H / 2 + 8) {
+      currentBlockIdx = block.id;
+      state = 'ABOVE_PICK';
+      stateTimer = 0;
+      autoRun = false;
+      document.getElementById('btn-auto').classList.remove('active');
+      break;
+    }
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+  const wx_ = (px - ox) / scale;
+  const wy_ = -(py - oy) / scale;
+  let overBlock = false;
+  for (const block of blocks) {
+    if (block.placed || block.held) continue;
+    const bx = block.x, by = TABLE_Y + BLOCK_H / 2;
+    if (Math.abs(wx_ - bx) < BLOCK_W / 2 + 8 && Math.abs(wy_ - by) < BLOCK_H / 2 + 8) {
+      overBlock = true;
+      break;
+    }
+  }
+  canvas.style.cursor = overBlock ? 'pointer' : 'default';
+});
+
+// ── Controls ─────────────────────────────────────────────────────────
+document.getElementById('btn-auto').addEventListener('click', () => {
+  autoRun = !autoRun;
+  document.getElementById('btn-auto').classList.toggle('active', autoRun);
+  if (autoRun && state === 'IDLE') stateTimer = 0;
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  resetBlocks();
+  angles = [...HOME_ANGLES];
+  targetAngles = [...HOME_ANGLES];
+  autoRun = true;
+  document.getElementById('btn-auto').classList.add('active');
+});
+
+document.getElementById('s-speed').addEventListener('input', e => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('v-speed').textContent = speed.toFixed(1) + '×';
+});
+
+// ── Init ─────────────────────────────────────────────────────────────
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d0d12">
+<title>SLAM Explorer — Level 5</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #16161a;
+  --surface:   #1e1e24;
+  --raised:    #252530;
+  --border:    #2e2e3a;
+  --text:      #e8e8e0;
+  --text-sec:  #8888a0;
+  --text-mute: #555568;
+  --accent:    #d4884a;
+  --accent-lit:#e8a060;
+  --ok:        #60c080;
+  --radius:    2px;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100dvh;
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  background: #0d0d12;
+  overflow: hidden;
+  position: relative;
+}
+
+canvas {
+  display: block;
+}
+
+#sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-header {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-link {
+  display: inline-block;
+  color: var(--text-mute);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  transition: color 0.15s;
+}
+
+.back-link:hover { color: var(--text-sec); }
+
+@media (prefers-reduced-motion: reduce) {
+  .back-link { transition: none; }
+}
+
+.sidebar-header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.03em;
+}
+
+.section {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+
+.grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.readout {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.readout-label {
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.readout-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  flex: 1;
+  min-height: 44px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+button:hover {
+  background: #2e2e3c;
+  border-color: #3e3e50;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 4px;
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.joint-name {
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.joint-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-sec);
+  line-height: 1.4;
+}
+
+.progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 0;
+  margin-top: 4px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill { transition: none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="sim-canvas"></canvas>
+  </div>
+
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <a href="index.html" class="back-link">← Learning Path</a>
+      <h1>SLAM Explorer</h1>
+      <p>Level 5 — Mapping &amp; Exploration</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Map Progress</div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        <span id="pct-label" style="font-size:22px;font-weight:700;font-family:var(--font-mono);color:var(--accent)">0%</span>
+        <span id="explore-state" style="font-size:11px;color:var(--text-mute);align-self:flex-end;padding-bottom:3px">Exploring</span>
+      </div>
+      <div class="progress-bar"><div id="explore-bar" class="progress-fill" style="width:0%"></div></div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text-mute)">
+        <span id="frontier-count">0</span> frontier cells remaining
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Robot</div>
+      <div class="grid-2x2">
+        <div class="readout"><div class="readout-label">Col</div><div class="readout-val" id="r-col">—</div></div>
+        <div class="readout"><div class="readout-label">Row</div><div class="readout-val" id="r-row">—</div></div>
+        <div class="readout"><div class="readout-label">Heading</div><div class="readout-val" id="r-theta">—</div></div>
+        <div class="readout"><div class="readout-label">Speed</div><div class="readout-val" id="r-v">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Current Target</div>
+      <div class="grid-2x2">
+        <div class="readout"><div class="readout-label">Target Col</div><div class="readout-val" id="t-col">—</div></div>
+        <div class="readout"><div class="readout-label">Target Row</div><div class="readout-val" id="t-row">—</div></div>
+        <div class="readout"><div class="readout-label">Distance</div><div class="readout-val" id="t-dist">—</div></div>
+        <div class="readout"><div class="readout-label">Waypoints</div><div class="readout-val" id="t-wpts">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Controls</div>
+      <div class="btn-row">
+        <button id="btn-reset">Reset</button>
+        <button id="btn-resume">Resume Auto</button>
+      </div>
+      <div style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span class="joint-name">Sim Speed</span>
+          <span id="v-speed" class="joint-val">1.0×</span>
+        </div>
+        <input type="range" id="s-speed" min="0.3" max="5" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">How It Works</div>
+      <ul class="legend-list">
+        <li class="legend-item">
+          <div style="width:14px;height:14px;background:#0d0d12;border:1px solid #2a2a38;flex-shrink:0"></div>
+          <span>Unknown space</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:14px;height:14px;background:#1a1e2c;flex-shrink:0"></div>
+          <span>Revealed free space</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:14px;height:14px;background:#38384e;flex-shrink:0"></div>
+          <span>Revealed walls</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:8px;height:8px;background:rgba(100,220,255,0.8);border-radius:50%;flex-shrink:0"></div>
+          <span>Lidar hit points (360°)</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:14px;height:14px;background:rgba(212,136,74,0.15);border:1px solid rgba(212,136,74,0.3);flex-shrink:0"></div>
+          <span>Frontier cells (unexplored boundary)</span>
+        </li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+const COLS = 52, ROWS = 36;
+const ROBOT_RADIUS = 0.45;
+
+// ── True map (hidden from display) ──────────────────────────────────────────
+function buildTrueMap() {
+  const map = [];
+  for (let r = 0; r < ROWS; r++) map.push(new Uint8Array(COLS));
+
+  function hwall(r, c0, c1) { for (let c = c0; c <= c1; c++) map[r][c] = 1; }
+  function vwall(c, r0, r1) { for (let r = r0; r <= r1; r++) map[r][c] = 1; }
+  function rect(r0, c0, r1, c1) { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) map[r][c] = 1; }
+
+  hwall(0, 0, COLS-1); hwall(ROWS-1, 0, COLS-1);
+  vwall(0, 0, ROWS-1); vwall(COLS-1, 0, ROWS-1);
+
+  hwall(1, 1, 15); vwall(1, 1, 11); vwall(15, 1, 11);
+  hwall(11, 1, 7); hwall(11, 10, 15);
+
+  hwall(1, 36, 50); vwall(36, 1, 11); vwall(50, 1, 11);
+  hwall(11, 36, 42); hwall(11, 45, 50);
+
+  hwall(18, 1, 9); hwall(18, 13, 23); hwall(18, 27, 37); hwall(18, 41, 50);
+
+  hwall(24, 1, 5); hwall(24, 8, 16);
+  vwall(1, 24, 34); vwall(16, 24, 34); hwall(34, 1, 16);
+
+  hwall(24, 35, 42); hwall(24, 45, 50);
+  vwall(35, 24, 34); vwall(50, 24, 34); hwall(34, 35, 50);
+
+  rect(13, 20, 15, 22); rect(13, 29, 15, 31);
+  rect(21, 8, 22, 10);  rect(21, 41, 22, 43);
+  rect(26, 24, 28, 26); rect(26, 33, 28, 35);
+
+  return map;
+}
+
+// ── Built map: 0=unknown, 1=free, 2=wall ────────────────────────────────────
+let builtMap = new Uint8Array(COLS * ROWS);
+function bm(r, c) { return builtMap[r * COLS + c]; }
+function setBM(r, c, v) { builtMap[r * COLS + c] = v; }
+
+// ── Lidar ────────────────────────────────────────────────────────────────────
+const LIDAR_RAYS  = 48;
+const LIDAR_RANGE = 9.0;
+const LIDAR_STEP  = 0.25;
+let lidarHits = [];
+
+function scanLidar() {
+  lidarHits = [];
+  for (let i = 0; i < LIDAR_RAYS; i++) {
+    const angle = (i / LIDAR_RAYS) * Math.PI * 2;
+    let hit = false;
+    let ex = robot.x, ey = robot.y;
+    for (let d = LIDAR_STEP; d <= LIDAR_RANGE; d += LIDAR_STEP) {
+      const rx = robot.x + Math.cos(angle) * d;
+      const ry = robot.y + Math.sin(angle) * d;
+      const ic = Math.floor(rx), ir = Math.floor(ry);
+      if (ic < 0 || ic >= COLS || ir < 0 || ir >= ROWS) { hit = true; break; }
+      if (trueMap[ir][ic] === 1) {
+        setBM(ir, ic, 2);
+        lidarHits.push({ x: rx, y: ry });
+        hit = true;
+        break;
+      } else {
+        const fc = Math.floor(rx), fr = Math.floor(ry);
+        if (bm(fr, fc) === 0) setBM(fr, fc, 1);
+        ex = rx; ey = ry;
+      }
+    }
+    if (!hit) lidarHits.push({ x: ex, y: ey });
+  }
+}
+
+// ── Frontier detection ───────────────────────────────────────────────────────
+let frontiers = [];
+let frontierDirty = true;
+let frontierSet = new Set();
+
+function computeFrontiers() {
+  frontiers = [];
+  frontierSet = new Set();
+  for (let r = 1; r < ROWS - 1; r++) {
+    for (let c = 1; c < COLS - 1; c++) {
+      if (bm(r, c) !== 1) continue;
+      if (bm(r-1, c) === 0 || bm(r+1, c) === 0 || bm(r, c-1) === 0 || bm(r, c+1) === 0) {
+        frontiers.push({ c, r });
+        frontierSet.add(`${c},${r}`);
+      }
+    }
+  }
+  frontierDirty = false;
+}
+
+// ── A* pathfinding on built map ──────────────────────────────────────────────
+function cellCost(c, r) {
+  if (c <= 0 || c >= COLS - 1 || r <= 0 || r >= ROWS - 1) return 0;
+  const v = bm(r, c);
+  if (v === 2) return 0;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (bm(r + dr, c + dc) === 2) return 0;
+    }
+  }
+  return v === 1 ? 1 : 2;
+}
+
+class MinHeap {
+  constructor() { this.d = []; }
+  push(x) { this.d.push(x); this._up(this.d.length - 1); }
+  pop() {
+    const t = this.d[0], l = this.d.pop();
+    if (this.d.length) { this.d[0] = l; this._dn(0); }
+    return t;
+  }
+  get size() { return this.d.length; }
+  _up(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.d[p].f <= this.d[i].f) break;
+      [this.d[p], this.d[i]] = [this.d[i], this.d[p]]; i = p;
+    }
+  }
+  _dn(i) {
+    const n = this.d.length;
+    for (;;) {
+      let s = i, l = 2 * i + 1, r = 2 * i + 2;
+      if (l < n && this.d[l].f < this.d[s].f) s = l;
+      if (r < n && this.d[r].f < this.d[s].f) s = r;
+      if (s === i) break;
+      [this.d[s], this.d[i]] = [this.d[i], this.d[s]]; i = s;
+    }
+  }
+}
+
+const DIRS8 = [
+  [0,1,1],[0,-1,1],[1,0,1],[-1,0,1],
+  [1,1,Math.SQRT2],[1,-1,Math.SQRT2],[-1,1,Math.SQRT2],[-1,-1,Math.SQRT2]
+];
+
+function aStar(sc, sr, gc, gr) {
+  const dist = new Float32Array(COLS * ROWS).fill(Infinity);
+  const prev = new Int32Array(COLS * ROWS).fill(-1);
+  dist[sr * COLS + sc] = 0;
+  const heap = new MinHeap();
+  heap.push({ c: sc, r: sr, f: 0 });
+  while (heap.size > 0) {
+    const { c, r } = heap.pop();
+    if (c === gc && r === gr) break;
+    const curDist = dist[r * COLS + c];
+    for (const [dc, dr, base] of DIRS8) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+      const cost = cellCost(nc, nr);
+      if (!cost) continue;
+      const moveCost = base * (cost === 2 ? 2.0 : 1.0);
+      const nd = curDist + moveCost;
+      if (nd < dist[nr * COLS + nc]) {
+        dist[nr * COLS + nc] = nd;
+        prev[nr * COLS + nc] = r * COLS + c;
+        heap.push({ c: nc, r: nr, f: nd + Math.hypot(gc - nc, gr - nr) });
+      }
+    }
+  }
+  if (dist[gr * COLS + gc] === Infinity) return null;
+  const path = [];
+  let idx = gr * COLS + gc;
+  while (idx !== sr * COLS + sc) {
+    path.push({ c: idx % COLS, r: Math.floor(idx / COLS) });
+    idx = prev[idx];
+    if (idx === -1) return null;
+  }
+  path.push({ c: sc, r: sr });
+  return path.reverse();
+}
+
+// ── Exploration state machine ────────────────────────────────────────────────
+let exploreState = 'EXPLORING';
+let currentGoal  = null;
+let path         = [];
+let pathIdx      = 0;
+let lastPos      = { x: 3.5, y: 3.5 };
+let lastPosTimer = 0;
+let manualGoal   = null;
+
+function pickNextFrontier() {
+  if (frontierDirty) computeFrontiers();
+  if (frontiers.length === 0) {
+    exploreState = 'COMPLETE';
+    currentGoal = null;
+    path = [];
+    return;
+  }
+  const sorted = [...frontiers].sort((a, b) =>
+    Math.hypot(a.c - robot.x, a.r - robot.y) - Math.hypot(b.c - robot.x, b.r - robot.y)
+  );
+  const candidates = sorted.slice(0, Math.min(8, sorted.length));
+  const cx = candidates.reduce((s, f) => s + f.c, 0) / candidates.length;
+  const cy = candidates.reduce((s, f) => s + f.r, 0) / candidates.length;
+  let best = candidates[0];
+  let bestD = Infinity;
+  for (const f of candidates) {
+    const d = Math.hypot(f.c - cx, f.r - cy);
+    if (d < bestD) { bestD = d; best = f; }
+  }
+  currentGoal = best;
+  const sc = Math.max(1, Math.min(COLS - 2, Math.round(robot.x)));
+  const sr = Math.max(1, Math.min(ROWS - 2, Math.round(robot.y)));
+  const result = aStar(sc, sr, best.c, best.r);
+  if (!result || result.length < 2) {
+    const alt = sorted[Math.min(3, sorted.length - 1)];
+    const r2 = aStar(sc, sr, alt.c, alt.r);
+    if (r2 && r2.length >= 2) {
+      currentGoal = alt;
+      path = r2;
+    } else {
+      // Try more candidates
+      let found = false;
+      for (let i = 0; i < Math.min(sorted.length, 20); i++) {
+        const candidate = sorted[i];
+        const r3 = aStar(sc, sr, candidate.c, candidate.r);
+        if (r3 && r3.length >= 2) {
+          currentGoal = candidate;
+          path = r3;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        exploreState = 'COMPLETE';
+        path = [];
+        return;
+      }
+    }
+  } else {
+    path = result;
+  }
+  pathIdx = 1;
+}
+
+// ── Robot ────────────────────────────────────────────────────────────────────
+let robot = { x: 3.5, y: 3.5, theta: 0, v: 0, omega: 0 };
+
+const MAX_SPEED     = 5.0;
+const MAX_OMEGA     = 3.2;
+const KP_HEADING    = 2.8;
+const WAYPOINT_DIST = 1.2;
+const SLOWDOWN_DIST = 2.5;
+const ARRIVE_DIST   = 0.5;
+
+function updateRobot(dt) {
+  const activeGoal = exploreState === 'MANUAL' ? manualGoal : currentGoal;
+
+  if (!activeGoal || path.length === 0 || exploreState === 'COMPLETE') {
+    robot.v     *= Math.max(0, 1 - dt * 5);
+    robot.omega *= Math.max(0, 1 - dt * 5);
+  } else {
+    while (pathIdx < path.length - 1) {
+      const wp = path[pathIdx];
+      if (Math.hypot(wp.c - robot.x, wp.r - robot.y) < WAYPOINT_DIST) pathIdx++;
+      else break;
+    }
+    const wp = path[pathIdx];
+    const dx = wp.c - robot.x, dy = wp.r - robot.y;
+    const distGoal = Math.hypot(activeGoal.c - robot.x, activeGoal.r - robot.y);
+
+    if (distGoal < ARRIVE_DIST) {
+      if (exploreState === 'MANUAL') {
+        exploreState = 'EXPLORING';
+        manualGoal = null;
+        path = [];
+        frontierDirty = true;
+      } else {
+        frontierDirty = true;
+        pickNextFrontier();
+      }
+      return;
+    }
+
+    const targetTheta = Math.atan2(dy, dx);
+    let err = targetTheta - robot.theta;
+    while (err >  Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+
+    const targetOmega = Math.max(-MAX_OMEGA, Math.min(MAX_OMEGA, KP_HEADING * err));
+    robot.omega += (targetOmega - robot.omega) * Math.min(1, dt * 8);
+
+    const turnF = Math.max(0.15, 1 - Math.abs(err) / Math.PI * 1.4);
+    const goalF = Math.min(1, distGoal / SLOWDOWN_DIST);
+    robot.v += (MAX_SPEED * turnF * goalF - robot.v) * Math.min(1, dt * 5);
+  }
+
+  robot.x += robot.v * Math.cos(robot.theta) * dt;
+  robot.y += robot.v * Math.sin(robot.theta) * dt;
+  robot.theta += robot.omega * dt;
+  robot.x = Math.max(0.6, Math.min(COLS - 1.6, robot.x));
+  robot.y = Math.max(0.6, Math.min(ROWS - 1.6, robot.y));
+}
+
+// ── Canvas / sizing ──────────────────────────────────────────────────────────
+const canvas  = document.getElementById('sim-canvas');
+const ctx     = canvas.getContext('2d');
+let cellSize  = 16;
+
+function resize() {
+  const wrap = document.getElementById('canvas-wrap');
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  cellSize = Math.min(Math.floor(W / COLS), Math.floor(H / ROWS));
+  canvas.width  = COLS * cellSize;
+  canvas.height = ROWS * cellSize;
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────────────
+function drawBuiltMap() {
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const v = bm(r, c);
+      if (v === 0) continue;
+      const x = c * cellSize, y = r * cellSize, s = cellSize;
+      if (v === 1) {
+        // Free cell — check if frontier
+        if (frontierSet.has(`${c},${r}`)) {
+          ctx.fillStyle = '#1f2235';
+        } else {
+          ctx.fillStyle = '#1a1e2c';
+        }
+        ctx.fillRect(x, y, s, s);
+        if (frontierSet.has(`${c},${r}`)) {
+          ctx.fillStyle = 'rgba(212,136,74,0.08)';
+          ctx.fillRect(x, y, s, s);
+        }
+      } else {
+        // Wall cell
+        ctx.fillStyle = '#38384e';
+        ctx.fillRect(x, y, s, s);
+        // Top-edge highlight
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(x, y, s, 1);
+      }
+    }
+  }
+}
+
+function drawPath() {
+  if (!path.length || pathIdx >= path.length) return;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(212,136,74,0.5)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([3, 4]);
+  ctx.beginPath();
+  const start = path[pathIdx];
+  ctx.moveTo((start.c + 0.5) * cellSize, (start.r + 0.5) * cellSize);
+  for (let i = pathIdx + 1; i < path.length; i++) {
+    ctx.lineTo((path[i].c + 0.5) * cellSize, (path[i].r + 0.5) * cellSize);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(212,136,74,0.6)';
+  for (let i = pathIdx; i < path.length; i++) {
+    ctx.beginPath();
+    ctx.arc((path[i].c + 0.5) * cellSize, (path[i].r + 0.5) * cellSize, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawCurrentGoal() {
+  const goal = exploreState === 'MANUAL' ? manualGoal : currentGoal;
+  if (!goal) return;
+  const gx = (goal.c + 0.5) * cellSize;
+  const gy = (goal.r + 0.5) * cellSize;
+  const color  = exploreState === 'MANUAL' ? '#d4884a' : '#60c080';
+  const armLen = 8;
+  const radius = 5;
+  const pulse  = Math.sin(pulseT * 2) * 0.4 + 0.6;
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1.5;
+  // Crosshair arms
+  ctx.beginPath();
+  ctx.moveTo(gx - armLen, gy); ctx.lineTo(gx - radius, gy);
+  ctx.moveTo(gx + radius, gy); ctx.lineTo(gx + armLen, gy);
+  ctx.moveTo(gx, gy - armLen); ctx.lineTo(gx, gy - radius);
+  ctx.moveTo(gx, gy + radius); ctx.lineTo(gx, gy + armLen);
+  ctx.stroke();
+  // Center circle
+  ctx.beginPath();
+  ctx.arc(gx, gy, radius, 0, Math.PI * 2);
+  ctx.stroke();
+  // Pulsing outer ring
+  ctx.globalAlpha = pulse * 0.5;
+  ctx.beginPath();
+  ctx.arc(gx, gy, radius + 4 + pulse * 3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLidarHits() {
+  if (!lidarHits.length) return;
+  ctx.save();
+  ctx.shadowColor = 'rgba(100,220,255,0.7)';
+  ctx.shadowBlur  = 4;
+  ctx.fillStyle   = 'rgba(100,220,255,0.7)';
+  for (const pt of lidarHits) {
+    ctx.beginPath();
+    ctx.arc(pt.x * cellSize, pt.y * cellSize, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawRobot() {
+  const rx = robot.x * cellSize;
+  const ry = robot.y * cellSize;
+  const r  = ROBOT_RADIUS * cellSize;
+
+  ctx.save();
+  ctx.translate(rx, ry);
+
+  // Glow
+  ctx.shadowColor = 'rgba(74,144,216,0.5)';
+  ctx.shadowBlur  = 10;
+
+  // Wheel rectangles
+  const ww = r * 0.28, wh = r * 0.72;
+  const wOffset = r * 0.85;
+  ctx.fillStyle = '#3a4060';
+  ctx.save();
+  ctx.rotate(robot.theta);
+  ctx.fillRect(-ww / 2 - wOffset, -wh / 2, ww, wh);
+  ctx.fillRect( ww / 2 + wOffset - ww, -wh / 2, ww, wh);
+  ctx.restore();
+
+  // Body
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = '#1e2840';
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#4a90d8';
+  ctx.lineWidth   = 2;
+  ctx.stroke();
+
+  // Direction arrow
+  ctx.save();
+  ctx.rotate(robot.theta);
+  ctx.strokeStyle = '#6ab0f0';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(r * 0.75, 0);
+  ctx.stroke();
+  ctx.fillStyle = '#6ab0f0';
+  ctx.beginPath();
+  ctx.moveTo(r * 0.75, 0);
+  ctx.lineTo(r * 0.55, -r * 0.22);
+  ctx.lineTo(r * 0.55,  r * 0.22);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function drawExploreComplete() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#e8e8e0';
+  ctx.font = `bold ${Math.round(cellSize * 2.2)}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.letterSpacing = '0.12em';
+  ctx.fillText('MAP COMPLETE', canvas.width / 2, canvas.height / 2);
+  ctx.restore();
+}
+
+function drawRuler() {
+  const rulerCells = 5;
+  const px = rulerCells * cellSize;
+  const x0 = 12, y0 = canvas.height - 14;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(136,136,160,0.5)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0 - 4); ctx.lineTo(x0, y0);
+  ctx.lineTo(x0 + px, y0);
+  ctx.lineTo(x0 + px, y0 - 4);
+  ctx.stroke();
+  ctx.fillStyle    = 'rgba(136,136,160,0.7)';
+  ctx.font         = '10px -apple-system, system-ui, sans-serif';
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(`${rulerCells} cells`, x0 + px / 2, y0 - 5);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#0d0d12';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawBuiltMap();
+  drawPath();
+  drawCurrentGoal();
+  drawLidarHits();
+  drawRobot();
+
+  if (exploreState === 'COMPLETE') drawExploreComplete();
+  drawRuler();
+}
+
+// ── Stats ────────────────────────────────────────────────────────────────────
+let totalRevealable = 0;
+
+function initStats() {
+  totalRevealable = COLS * ROWS;
+}
+
+function updateUI() {
+  const revealed = builtMap.reduce((s, v) => s + (v > 0 ? 1 : 0), 0);
+  const pct = Math.round(revealed / totalRevealable * 100);
+  document.getElementById('pct-label').textContent    = pct + '%';
+  document.getElementById('explore-bar').style.width  = pct + '%';
+  document.getElementById('explore-state').textContent =
+    exploreState === 'COMPLETE' ? 'Complete!' :
+    exploreState === 'MANUAL'   ? 'Manual'    : 'Exploring';
+  document.getElementById('frontier-count').textContent = frontiers.length;
+
+  document.getElementById('r-col').textContent   = robot.x.toFixed(1);
+  document.getElementById('r-row').textContent   = robot.y.toFixed(1);
+  document.getElementById('r-theta').textContent = (robot.theta * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('r-v').textContent     = robot.v.toFixed(2);
+
+  const goal = exploreState === 'MANUAL' ? manualGoal : currentGoal;
+  if (goal) {
+    document.getElementById('t-col').textContent  = goal.c;
+    document.getElementById('t-row').textContent  = goal.r;
+    document.getElementById('t-dist').textContent = Math.hypot(goal.c - robot.x, goal.r - robot.y).toFixed(1);
+    document.getElementById('t-wpts').textContent = Math.max(0, path.length - pathIdx);
+  } else {
+    ['t-col','t-row','t-dist','t-wpts'].forEach(id => document.getElementById(id).textContent = '—');
+  }
+}
+
+// ── Animate loop ─────────────────────────────────────────────────────────────
+let lastTS     = null;
+let pulseT     = 0;
+let speed      = 1.0;
+let frameCount = 0;
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const rawDt = lastTS === null ? 0 : Math.min(ts - lastTS, 80);
+  lastTS = ts;
+  const dt = (rawDt / 1000) * speed;
+  pulseT += rawDt * 0.003;
+  frameCount++;
+
+  scanLidar();
+
+  if (frameCount % 8 === 0) {
+    frontierDirty = true;
+    computeFrontiers();
+  }
+
+  if (exploreState === 'EXPLORING' && path.length === 0) {
+    frontierDirty = true;
+    pickNextFrontier();
+  }
+
+  lastPosTimer += rawDt;
+  if (lastPosTimer > 1500) {
+    if (Math.hypot(robot.x - lastPos.x, robot.y - lastPos.y) < 0.4 && exploreState === 'EXPLORING') {
+      frontierDirty = true;
+      pickNextFrontier();
+    }
+    lastPos = { x: robot.x, y: robot.y };
+    lastPosTimer = 0;
+  }
+
+  updateRobot(dt);
+  draw();
+  updateUI();
+}
+
+// ── Canvas interaction ───────────────────────────────────────────────────────
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rect.left) / cellSize);
+  const r = Math.floor((e.clientY - rect.top)  / cellSize);
+  if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return;
+  if (bm(r, c) !== 1) return;
+  const sc = Math.max(1, Math.min(COLS - 2, Math.round(robot.x)));
+  const sr = Math.max(1, Math.min(ROWS - 2, Math.round(robot.y)));
+  const result = aStar(sc, sr, c, r);
+  if (!result || result.length < 2) return;
+  exploreState = 'MANUAL';
+  manualGoal   = { c, r };
+  path         = result;
+  pathIdx      = 1;
+});
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const c = Math.floor((e.clientX - rect.left) / cellSize);
+  const r = Math.floor((e.clientY - rect.top)  / cellSize);
+  const ok = c >= 0 && c < COLS && r >= 0 && r < ROWS && bm(r, c) === 1;
+  canvas.style.cursor = ok ? 'crosshair' : 'default';
+});
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+document.getElementById('btn-reset').addEventListener('click', () => {
+  robot        = { x: 3.5, y: 3.5, theta: 0, v: 0, omega: 0 };
+  builtMap     = new Uint8Array(COLS * ROWS);
+  path         = []; pathIdx = 0;
+  currentGoal  = null; manualGoal = null;
+  frontiers    = []; frontierDirty = true; frontierSet = new Set();
+  exploreState = 'EXPLORING';
+  lastPos      = { x: 3.5, y: 3.5 }; lastPosTimer = 0;
+});
+
+document.getElementById('btn-resume').addEventListener('click', () => {
+  if (exploreState === 'COMPLETE') return;
+  exploreState = 'EXPLORING';
+  manualGoal   = null;
+  path         = [];
+  frontierDirty = true;
+});
+
+document.getElementById('s-speed').addEventListener('input', e => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('v-speed').textContent = speed.toFixed(1) + '×';
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+const trueMap = buildTrueMap();
+initStats();
+resize();
+window.addEventListener('resize', resize);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

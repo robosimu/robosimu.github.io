@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16161a">
+<title>Mobile Manipulation — Level 6</title>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #16161a;
+  --surface: #1e1e24;
+  --raised: #252530;
+  --border: #2e2e3a;
+  --text: #e8e8e0;
+  --text-sec: #8888a0;
+  --text-mute: #555568;
+  --accent: #d4884a;
+  --accent-lit: #e8a060;
+  --ok: #60c080;
+  --radius: 2px;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ─────────────────────────────────────────── */
+#sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-header {
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-link {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-decoration: underline;
+  letter-spacing: 0.03em;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.back-link:hover { color: var(--text-sec); }
+.back-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.sidebar-header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 3px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.section {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+/* Task and State rows */
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.state-row.state-current { color: var(--accent); }
+.state-row.state-current .state-dot { background: var(--accent); }
+.state-row.state-past { color: var(--text-mute); }
+.state-row.state-past .state-dot { background: var(--ok); }
+
+/* Readouts */
+.grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.readout {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+}
+
+.readout-label {
+  font-size: 9px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.readout-val {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  flex: 1;
+  min-height: 44px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-sec);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  letter-spacing: 0.03em;
+}
+
+button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+button.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Range input */
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.joint-name {
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.joint-val {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-sec);
+}
+
+/* Legend */
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+/* ─── Canvas area ─────────────────────────────────────── */
+#canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  position: relative;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="sidebar-header">
+    <a href="index.html" class="back-link">← Learning Path</a>
+    <h1>Mobile Manipulation</h1>
+    <p>Level 6 — Capstone</p>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Task Queue</div>
+    <div id="task-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">State Machine</div>
+    <div id="state-list"></div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Robot</div>
+    <div class="grid-2x2">
+      <div class="readout"><div class="readout-label">Col</div><div class="readout-val" id="r-col">—</div></div>
+      <div class="readout"><div class="readout-label">Row</div><div class="readout-val" id="r-row">—</div></div>
+      <div class="readout"><div class="readout-label">Heading</div><div class="readout-val" id="r-theta">—</div></div>
+      <div class="readout"><div class="readout-label">Speed</div><div class="readout-val" id="r-v">—</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Arm</div>
+    <div class="grid-2x2">
+      <div class="readout"><div class="readout-label">θ1</div><div class="readout-val" id="a-1">—</div></div>
+      <div class="readout"><div class="readout-label">θ2</div><div class="readout-val" id="a-2">—</div></div>
+      <div class="readout"><div class="readout-label">θ3</div><div class="readout-val" id="a-3">—</div></div>
+      <div class="readout"><div class="readout-label">Gripper</div><div class="readout-val" id="a-grip">Open</div></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Controls</div>
+    <div class="btn-row">
+      <button id="btn-auto" class="active">Auto Run</button>
+      <button id="btn-reset">Reset</button>
+    </div>
+    <div style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span class="joint-name">Speed</span>
+        <span id="v-speed" class="joint-val">1.0×</span>
+      </div>
+      <input type="range" id="s-speed" min="0.3" max="4" step="0.1" value="1">
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-label">Legend</div>
+    <ul class="legend-list">
+      <li class="legend-item"><div style="width:14px;height:14px;background:#b83c3c;flex-shrink:0"></div><span>Item A</span></li>
+      <li class="legend-item"><div style="width:14px;height:14px;background:#3a72b8;flex-shrink:0"></div><span>Item B</span></li>
+      <li class="legend-item"><div style="width:14px;height:14px;background:#3d8c4a;flex-shrink:0"></div><span>Item C</span></li>
+      <li class="legend-item"><div style="width:14px;height:3px;background:rgba(212,136,74,0.6);flex-shrink:0"></div><span>A* path</span></li>
+      <li class="legend-item"><div style="width:14px;height:14px;border:2px solid #4a90d8;border-radius:50%;flex-shrink:0"></div><span>Mobile base</span></li>
+      <li class="legend-item"><div style="width:14px;height:3px;background:#b06e28;flex-shrink:0"></div><span>Arm links</span></li>
+    </ul>
+  </div>
+</aside>
+
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const COLS = 56, ROWS = 40;
+
+const MAX_SPEED    = 4.5;
+const MAX_OMEGA    = 3.0;
+const KP_HEADING   = 2.8;
+const WAYPOINT_DIST = 1.2;
+const SLOWDOWN_DIST = 2.5;
+const ARRIVE_DIST   = 0.5;
+const ROBOT_RADIUS  = 0.55;
+
+const L1 = 300, L2 = 240, L3 = 120;
+
+// ─── Canvas setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+let cellSize = 16;
+
+function resizeCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  canvas.width  = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  cellSize = Math.min(canvas.width / COLS, canvas.height / ROWS);
+}
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function cx(x) { return x * cellSize; }
+function cy(y) { return y * cellSize; }
+
+// ─── Map ──────────────────────────────────────────────────────────────────────
+function buildMap() {
+  const map = [];
+  for (let r = 0; r < ROWS; r++) map.push(new Uint8Array(COLS));
+  function rect(r0, c0, r1, c1) {
+    for (let r = r0; r <= r1; r++)
+      for (let c = c0; c <= c1; c++)
+        map[r][c] = 1;
+  }
+  rect(0, 0, 0, COLS - 1);
+  rect(ROWS - 1, 0, ROWS - 1, COLS - 1);
+  rect(0, 0, ROWS - 1, 0);
+  rect(0, COLS - 1, ROWS - 1, COLS - 1);
+  rect(2, 7,  4, 13);
+  rect(2, 22, 4, 28);
+  rect(2, 37, 4, 43);
+  rect(17, 20, 19, 22);
+  rect(17, 33, 19, 35);
+  return map;
+}
+
+const MAP = buildMap();
+
+// Precompute safe map (inflated by 1 cell)
+const safeMap = [];
+for (let r = 0; r < ROWS; r++) safeMap.push(new Uint8Array(COLS));
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    let safe = true;
+    for (let dr = -1; dr <= 1 && safe; dr++)
+      for (let dc = -1; dc <= 1 && safe; dc++) {
+        const nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS || MAP[nr][nc] === 1)
+          safe = false;
+      }
+    safeMap[r][c] = safe ? 0 : 1;
+  }
+}
+
+function isSafe(r, c) {
+  return r >= 0 && r < ROWS && c >= 0 && c < COLS && safeMap[r][c] === 0;
+}
+
+// ─── Shelves, Tasks, Drop Zones ───────────────────────────────────────────────
+const SHELVES = [
+  {
+    c: 10, r: 4, approachC: 10, approachR: 9, faceTheta: -Math.PI / 2,
+    items: [{ offsetMm: 450, color: '#b83c3c', label: 'A', picked: false }]
+  },
+  {
+    c: 25, r: 4, approachC: 25, approachR: 9, faceTheta: -Math.PI / 2,
+    items: [{ offsetMm: 450, color: '#3a72b8', label: 'B', picked: false }]
+  },
+  {
+    c: 40, r: 4, approachC: 40, approachR: 9, faceTheta: -Math.PI / 2,
+    items: [{ offsetMm: 450, color: '#3d8c4a', label: 'C', picked: false }]
+  },
+];
+
+const DROP_ZONES = [
+  { c: 10, r: 33, label: 'Zone 1', approaching: { c: 10, r: 30 }, faceTheta: Math.PI / 2 },
+  { c: 28, r: 33, label: 'Zone 2', approaching: { c: 28, r: 30 }, faceTheta: Math.PI / 2 },
+  { c: 46, r: 33, label: 'Zone 3', approaching: { c: 46, r: 30 }, faceTheta: Math.PI / 2 },
+];
+
+const TASKS = [
+  { shelfIdx: 0, itemIdx: 0, zoneIdx: 0 },
+  { shelfIdx: 1, itemIdx: 0, zoneIdx: 1 },
+  { shelfIdx: 2, itemIdx: 0, zoneIdx: 2 },
+];
+
+// ─── State machine ────────────────────────────────────────────────────────────
+const STATE_LABELS = {
+  IDLE:               'Idle / Home',
+  NAV_TO_SHELF:       'Navigating to shelf',
+  FACE_SHELF:         'Aligning with shelf',
+  ARM_EXTEND_PICK:    'Arm reaching for item',
+  GRIP:               'Closing gripper',
+  ARM_RETRACT_PICK:   'Retracting arm',
+  NAV_TO_ZONE:        'Navigating to drop zone',
+  FACE_ZONE:          'Aligning with drop zone',
+  ARM_EXTEND_PLACE:   'Arm extending to place',
+  RELEASE:            'Opening gripper',
+  ARM_RETRACT_PLACE:  'Retracting arm',
+  TASK_COMPLETE:      'Task complete',
+  ALL_DONE:           'All tasks complete',
+};
+const STATE_ORDER = Object.keys(STATE_LABELS);
+
+let state            = 'IDLE';
+let stateTimer       = 0;
+let stateJustEntered = false;
+let taskIdx          = 0;
+let autoRun          = true;
+
+function transition(newState) {
+  state            = newState;
+  stateTimer       = 0;
+  stateJustEntered = true;
+}
+
+// ─── Robot & arm state ────────────────────────────────────────────────────────
+let robot = { x: 28, y: 22, theta: 0, v: 0, omega: 0 };
+
+let armAngles  = [0, -150, 150];
+let armTarget  = [0, -150, 150];
+let armVisible = false;
+let gripT      = 0;
+let heldItem   = null;
+let placedItems = [];
+
+// ─── A* pathfinding ───────────────────────────────────────────────────────────
+class MinHeap {
+  constructor() { this.data = []; }
+  push(item) {
+    this.data.push(item);
+    this._bubbleUp(this.data.length - 1);
+  }
+  pop() {
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0) {
+      this.data[0] = last;
+      this._sinkDown(0);
+    }
+    return top;
+  }
+  get size() { return this.data.length; }
+  _bubbleUp(i) {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (this.data[parent].f <= this.data[i].f) break;
+      [this.data[parent], this.data[i]] = [this.data[i], this.data[parent]];
+      i = parent;
+    }
+  }
+  _sinkDown(i) {
+    const n = this.data.length;
+    while (true) {
+      let smallest = i;
+      const l = 2 * i + 1, r = 2 * i + 2;
+      if (l < n && this.data[l].f < this.data[smallest].f) smallest = l;
+      if (r < n && this.data[r].f < this.data[smallest].f) smallest = r;
+      if (smallest === i) break;
+      [this.data[i], this.data[smallest]] = [this.data[smallest], this.data[i]];
+      i = smallest;
+    }
+  }
+}
+
+function aStar(sc, sr, gc, gr) {
+  if (!isSafe(gr, gc)) {
+    // Try to find nearest safe cell near goal
+    let best = null, bestDist = Infinity;
+    for (let dr = -2; dr <= 2; dr++) {
+      for (let dc = -2; dc <= 2; dc++) {
+        const nr = gr + dr, nc = gc + dc;
+        if (isSafe(nr, nc)) {
+          const d = Math.hypot(dr, dc);
+          if (d < bestDist) { bestDist = d; best = { r: nr, c: nc }; }
+        }
+      }
+    }
+    if (!best) return null;
+    gr = best.r; gc = best.c;
+  }
+
+  const g = new Float32Array(ROWS * COLS).fill(Infinity);
+  const parent = new Int32Array(ROWS * COLS).fill(-1);
+  const idx = (r, c) => r * COLS + c;
+  const open = new MinHeap();
+  g[idx(sr, sc)] = 0;
+  open.push({ r: sr, c: sc, f: Math.hypot(gc - sc, gr - sr) });
+
+  const dirs = [
+    [0,1],[0,-1],[1,0],[-1,0],
+    [1,1],[1,-1],[-1,1],[-1,-1]
+  ];
+  const costs = [1,1,1,1,1.414,1.414,1.414,1.414];
+
+  while (open.size > 0) {
+    const cur = open.pop();
+    const { r, c } = cur;
+    if (r === gr && c === gc) {
+      // Reconstruct
+      const path = [];
+      let ni = idx(r, c);
+      while (ni !== -1) {
+        const pr = Math.floor(ni / COLS), pc = ni % COLS;
+        path.push({ r: pr, c: pc });
+        ni = parent[ni];
+      }
+      return path.reverse();
+    }
+    for (let d = 0; d < dirs.length; d++) {
+      const nr = r + dirs[d][0], nc = c + dirs[d][1];
+      if (!isSafe(nr, nc)) continue;
+      const ng = g[idx(r, c)] + costs[d];
+      if (ng < g[idx(nr, nc)]) {
+        g[idx(nr, nc)] = ng;
+        parent[idx(nr, nc)] = idx(r, c);
+        const h = Math.hypot(gc - nc, gr - nr);
+        open.push({ r: nr, c: nc, f: ng + h });
+      }
+    }
+  }
+  return null;
+}
+
+// ─── Navigation state ─────────────────────────────────────────────────────────
+let path    = [];
+let pathIdx = 0;
+let navGoal = null;
+
+function navigateTo(c, r) {
+  navGoal = { c, r };
+  const sc = Math.max(1, Math.min(COLS - 2, Math.round(robot.x)));
+  const sr = Math.max(1, Math.min(ROWS - 2, Math.round(robot.y)));
+  const result = aStar(sc, sr, c, r);
+  path    = result || [];
+  pathIdx = 1;
+}
+
+function updateRobot(dt) {
+  if (!path || path.length === 0) return;
+
+  // Advance waypoints
+  while (pathIdx < path.length - 1) {
+    const wp = path[pathIdx];
+    if (Math.hypot(robot.x - wp.c, robot.y - wp.r) < WAYPOINT_DIST) pathIdx++;
+    else break;
+  }
+
+  if (pathIdx >= path.length) return;
+
+  const wp   = path[pathIdx];
+  const dx   = wp.c - robot.x;
+  const dy   = wp.r - robot.y;
+  const dist = Math.hypot(dx, dy);
+
+  const targetAngle = Math.atan2(dy, dx);
+  let headErr = targetAngle - robot.theta;
+  while (headErr >  Math.PI) headErr -= 2 * Math.PI;
+  while (headErr < -Math.PI) headErr += 2 * Math.PI;
+
+  const targetOmega = Math.max(-MAX_OMEGA, Math.min(MAX_OMEGA, KP_HEADING * headErr));
+  robot.omega += (targetOmega - robot.omega) * Math.min(1, dt * 8);
+
+  // Speed modulated by heading error and proximity
+  const speedFactor = Math.max(0, 1 - Math.abs(headErr) / (Math.PI * 0.6));
+  const distFactor  = Math.min(1, dist / SLOWDOWN_DIST);
+  const targetSpeed = MAX_SPEED * speedFactor * distFactor;
+  robot.v += (targetSpeed - robot.v) * Math.min(1, dt * 5);
+  robot.v  = Math.max(0, Math.min(MAX_SPEED, robot.v));
+
+  robot.x    += robot.v * Math.cos(robot.theta) * dt;
+  robot.y    += robot.v * Math.sin(robot.theta) * dt;
+  robot.theta += robot.omega * dt;
+}
+
+// ─── Arm kinematics ───────────────────────────────────────────────────────────
+function fkArm(a1, a2, a3) {
+  const r1 = a1 * Math.PI / 180;
+  const r2 = (a1 + a2) * Math.PI / 180;
+  const r3 = (a1 + a2 + a3) * Math.PI / 180;
+  return {
+    j0: { x: 0, y: 0 },
+    j1: { x: L1 * Math.cos(r1),                               y: L1 * Math.sin(r1) },
+    j2: { x: L1 * Math.cos(r1) + L2 * Math.cos(r2),          y: L1 * Math.sin(r1) + L2 * Math.sin(r2) },
+    ee: { x: L1 * Math.cos(r1) + L2 * Math.cos(r2) + L3 * Math.cos(r3),
+          y: L1 * Math.sin(r1) + L2 * Math.sin(r2) + L3 * Math.sin(r3) }
+  };
+}
+
+function ikArm(targetMm) {
+  const tx = targetMm, ty = 0;
+  const wristX = tx - L3, wristY = 0;
+  const d2 = wristX * wristX + wristY * wristY;
+  const c2 = (d2 - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+  if (c2 < -1 || c2 > 1) return null;
+  const s2 = Math.sqrt(1 - c2 * c2);
+  const t2 = Math.atan2(s2, c2);
+  const t1 = Math.atan2(wristY, wristX) - Math.atan2(L2 * s2, L1 + L2 * c2);
+  const t3 = -t1 - t2; // phi=0
+  return [t1 * 180 / Math.PI, t2 * 180 / Math.PI, t3 * 180 / Math.PI];
+}
+
+function armToWorld(localX_mm, localY_mm) {
+  const lx = localX_mm / 100;
+  const ly = localY_mm / 100;
+  return {
+    x: robot.x + lx * Math.cos(robot.theta) - ly * Math.sin(robot.theta),
+    y: robot.y + lx * Math.sin(robot.theta) + ly * Math.cos(robot.theta)
+  };
+}
+
+function lerpAngle(a, b, t) {
+  const d = ((b - a + 540) % 360) - 180;
+  return a + d * t;
+}
+
+// ─── Face angle helper ────────────────────────────────────────────────────────
+function faceAngle(target, dt) {
+  let err = target - robot.theta;
+  while (err >  Math.PI) err -= 2 * Math.PI;
+  while (err < -Math.PI) err += 2 * Math.PI;
+  robot.v = 0;
+  const tOmega = Math.max(-MAX_OMEGA, Math.min(MAX_OMEGA, KP_HEADING * err));
+  robot.omega += (tOmega - robot.omega) * Math.min(1, dt * 8);
+  robot.theta += robot.omega * dt;
+  return Math.abs(err) < 0.05 && Math.abs(robot.omega) < 0.1;
+}
+
+// ─── Drawing ──────────────────────────────────────────────────────────────────
+function drawMap() {
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (MAP[r][c] === 1) {
+        ctx.fillStyle = '#2e2e3c';
+        ctx.fillRect(cx(c), cy(r), cellSize, cellSize);
+        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(cx(c), cy(r));
+        ctx.lineTo(cx(c) + cellSize, cy(r));
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(cx(c), 0);
+    ctx.lineTo(cx(c), cy(ROWS));
+    ctx.stroke();
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, cy(r));
+    ctx.lineTo(cx(COLS), cy(r));
+    ctx.stroke();
+  }
+}
+
+function drawDropZones() {
+  for (let i = 0; i < DROP_ZONES.length; i++) {
+    const z = DROP_ZONES[i];
+    const hasItem = placedItems.some(p => p.zoneIdx === i);
+    const color   = hasItem ? 'rgba(212,136,74,0.5)' : 'rgba(96,192,128,0.4)';
+    const halfW   = 1.75;
+    const x0 = cx(z.c - halfW), y0 = cy(z.r - halfW);
+    const w  = cx(z.c + halfW) - x0, h = cy(z.r + halfW) - y0;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(x0, y0, w, h);
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(96,192,128,0.04)';
+    if (hasItem) ctx.fillStyle = 'rgba(212,136,74,0.06)';
+    ctx.fillRect(x0, y0, w, h);
+
+    ctx.fillStyle  = '#8888a0';
+    ctx.font       = `${Math.max(8, cellSize * 0.5)}px var(--font-ui, sans-serif)`;
+    ctx.textAlign  = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(z.label, cx(z.c), cy(z.r + halfW) + 3);
+  }
+}
+
+function drawShelves() {
+  for (const shelf of SHELVES) {
+    // Label above shelf
+    ctx.fillStyle  = '#555568';
+    ctx.font       = `bold ${Math.max(7, cellSize * 0.4)}px var(--font-ui, sans-serif)`;
+    ctx.textAlign  = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(`SHELF ${shelf.items[0].label}`, cx(shelf.c), cy(shelf.r - 0.1));
+
+    // Items
+    for (const item of shelf.items) {
+      const iw  = cellSize * 0.7;
+      const ix  = cx(shelf.c) - iw / 2;
+      const iy  = cy(shelf.r - 0.3) - iw / 2;
+      ctx.globalAlpha = item.picked ? 0.2 : 1.0;
+      ctx.fillStyle   = item.color;
+      ctx.fillRect(ix, iy, iw, iw);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(ix, iy, iw, iw);
+      ctx.fillStyle    = '#fff';
+      ctx.font         = `bold ${Math.max(7, cellSize * 0.45)}px var(--font-ui, sans-serif)`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item.label, cx(shelf.c), cy(shelf.r - 0.3));
+      ctx.globalAlpha  = 1.0;
+    }
+  }
+}
+
+function drawPlacedItems() {
+  for (let i = 0; i < DROP_ZONES.length; i++) {
+    const zone = DROP_ZONES[i];
+    const items = placedItems.filter(p => p.zoneIdx === i);
+    for (let j = 0; j < items.length; j++) {
+      const item = items[j];
+      const iw   = cellSize * 0.7;
+      const ix   = cx(zone.c) - iw / 2;
+      const iy   = cy(zone.r) - iw / 2 - j * (iw + 2);
+      ctx.fillStyle   = item.color;
+      ctx.fillRect(ix, iy, iw, iw);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth   = 1;
+      ctx.strokeRect(ix, iy, iw, iw);
+      ctx.fillStyle    = '#fff';
+      ctx.font         = `bold ${Math.max(7, cellSize * 0.45)}px var(--font-ui, sans-serif)`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(item.label, cx(zone.c), cy(zone.r) - j * (iw + 2));
+    }
+  }
+}
+
+function drawPath() {
+  if (!path || path.length < 2 || pathIdx >= path.length) return;
+
+  ctx.strokeStyle = 'rgba(212,136,74,0.55)';
+  ctx.lineWidth   = 1.5;
+  ctx.setLineDash([4, 5]);
+  ctx.beginPath();
+  ctx.moveTo(cx(robot.x), cy(robot.y));
+  for (let i = pathIdx; i < path.length; i++) {
+    ctx.lineTo(cx(path[i].c), cy(path[i].r));
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Waypoint dots
+  ctx.fillStyle = 'rgba(212,136,74,0.4)';
+  for (let i = pathIdx; i < path.length; i++) {
+    ctx.beginPath();
+    ctx.arc(cx(path[i].c), cy(path[i].r), 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGripperTopdown(sx, sy, angle, gt) {
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(angle);
+  const gap = 4 * (1 - gt);
+  ctx.fillStyle   = '#d03030';
+  ctx.shadowColor = 'rgba(208,48,48,0.4)';
+  ctx.shadowBlur  = gt > 0.5 ? 6 : 0;
+  ctx.fillRect(0, -(gap + 2), 6, 4);
+  ctx.fillRect(0,  gap - 2,   6, 4);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawArm() {
+  if (!armVisible) return;
+  const pose   = fkArm(armAngles[0], armAngles[1], armAngles[2]);
+  const keys   = ['j0', 'j1', 'j2', 'ee'];
+  const joints = keys.map(k => {
+    const w = armToWorld(pose[k].x, pose[k].y);
+    return { sx: cx(w.x), sy: cy(w.y) };
+  });
+
+  const linkColors = ['#b06e28', '#b86828', '#c06020'];
+  const linkWidths = [5, 4, 3];
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(joints[i].sx, joints[i].sy);
+    ctx.lineTo(joints[i + 1].sx, joints[i + 1].sy);
+    ctx.strokeStyle = linkColors[i];
+    ctx.lineWidth   = linkWidths[i];
+    ctx.lineCap     = 'round';
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,200,100,0.2)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+  }
+
+  const jointColors = ['#f0a060', '#d4884a', '#c07840'];
+  const jointRadii  = [5, 4, 3];
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.arc(joints[i].sx, joints[i].sy, jointRadii[i], 0, Math.PI * 2);
+    ctx.fillStyle = '#2a2030';
+    ctx.fill();
+    ctx.strokeStyle = jointColors[i];
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+  }
+
+  const ee         = joints[3];
+  const r3deg      = armAngles[0] + armAngles[1] + armAngles[2];
+  const worldAngle = robot.theta + r3deg * Math.PI / 180;
+  drawGripperTopdown(ee.sx, ee.sy, worldAngle, gripT);
+}
+
+function drawHeldItem() {
+  if (!heldItem) return;
+  const pose = fkArm(armAngles[0], armAngles[1], armAngles[2]);
+  const w    = armToWorld(pose.ee.x, pose.ee.y);
+  const iw   = cellSize * 0.6;
+  const sx   = cx(w.x) - iw / 2;
+  const sy   = cy(w.y) - iw / 2;
+  ctx.fillStyle   = heldItem.color;
+  ctx.fillRect(sx, sy, iw, iw);
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(sx, sy, iw, iw);
+  ctx.fillStyle    = '#fff';
+  ctx.font         = `bold ${Math.max(7, cellSize * 0.4)}px var(--font-ui, sans-serif)`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(heldItem.label, cx(w.x), cy(w.y));
+}
+
+function drawRobot() {
+  const sx = cx(robot.x);
+  const sy = cy(robot.y);
+  const r  = ROBOT_RADIUS * cellSize;
+
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur  = 12;
+
+  // Wheels
+  const wheelW = r * 0.28;
+  const wheelH = r * 0.9;
+  const perpX  = Math.cos(robot.theta + Math.PI / 2);
+  const perpY  = Math.sin(robot.theta + Math.PI / 2);
+  const fwdX   = Math.cos(robot.theta);
+  const fwdY   = Math.sin(robot.theta);
+
+  ctx.fillStyle = '#111118';
+  for (const side of [-1, 1]) {
+    ctx.save();
+    ctx.translate(sx + perpX * r * 0.85 * side, sy + perpY * r * 0.85 * side);
+    ctx.rotate(robot.theta);
+    ctx.fillRect(-wheelH / 2, -wheelW / 2, wheelH, wheelW);
+    ctx.restore();
+  }
+
+  // Body circle
+  ctx.beginPath();
+  ctx.arc(sx, sy, r, 0, Math.PI * 2);
+  ctx.fillStyle   = '#1e2840';
+  ctx.fill();
+  ctx.strokeStyle = '#4a90d8';
+  ctx.lineWidth   = 2;
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  // Direction arrow
+  ctx.beginPath();
+  ctx.moveTo(sx + fwdX * r * 0.3, sy + fwdY * r * 0.3);
+  ctx.lineTo(sx + fwdX * r * 0.8, sy + fwdY * r * 0.8);
+  ctx.strokeStyle = '#4a90d8';
+  ctx.lineWidth   = 2;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  // Arrowhead
+  const ahX = sx + fwdX * r * 0.8;
+  const ahY = sy + fwdY * r * 0.8;
+  const leftX  = ahX - fwdX * r * 0.2 + perpX * r * 0.12;
+  const leftY  = ahY - fwdY * r * 0.2 + perpY * r * 0.12;
+  const rightX = ahX - fwdX * r * 0.2 - perpX * r * 0.12;
+  const rightY = ahY - fwdY * r * 0.2 - perpY * r * 0.12;
+  ctx.beginPath();
+  ctx.moveTo(ahX, ahY);
+  ctx.lineTo(leftX, leftY);
+  ctx.lineTo(rightX, rightY);
+  ctx.closePath();
+  ctx.fillStyle = '#4a90d8';
+  ctx.fill();
+}
+
+function drawAllDoneOverlay() {
+  const cx0 = canvas.width / 2;
+  const cy0 = canvas.height / 2;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(cx0 - 180, cy0 - 28, 360, 56);
+  ctx.fillStyle    = '#e8e8e0';
+  ctx.font         = `bold ${Math.max(16, cellSize)}px var(--font-ui, sans-serif)`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('ALL TASKS COMPLETE', cx0, cy0);
+}
+
+function drawRuler() {
+  const margin = 6;
+  const y = canvas.height - margin - 8;
+  const barW = cellSize * 5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath();
+  ctx.moveTo(margin, y);
+  ctx.lineTo(margin + barW, y);
+  ctx.moveTo(margin, y - 4);
+  ctx.lineTo(margin, y + 4);
+  ctx.moveTo(margin + barW, y - 4);
+  ctx.lineTo(margin + barW, y + 4);
+  ctx.stroke();
+  ctx.fillStyle    = 'rgba(255,255,255,0.35)';
+  ctx.font         = `${Math.max(8, cellSize * 0.45)}px var(--font-ui, sans-serif)`;
+  ctx.textAlign    = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('500mm', margin + barW / 2, y - 8);
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#141418';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  drawGrid();
+  drawMap();
+  drawDropZones();
+  drawShelves();
+  drawPlacedItems();
+  drawPath();
+  drawArm();
+  drawHeldItem();
+  drawRobot();
+  drawRuler();
+
+  if (state === 'ALL_DONE') drawAllDoneOverlay();
+}
+
+// ─── UI ────────────────────────────────────────────────────────────────────────
+function renderTaskList() {
+  const el = document.getElementById('task-list');
+  el.innerHTML = TASKS.map((t, i) => {
+    const shelf  = SHELVES[t.shelfIdx];
+    const item   = shelf.items[t.itemIdx];
+    const zone   = DROP_ZONES[t.zoneIdx];
+    const done   = i < taskIdx || state === 'ALL_DONE';
+    const active = i === taskIdx && state !== 'ALL_DONE';
+    return `<div class="state-row ${active ? 'state-current' : ''} ${done ? 'state-past' : ''}">
+      <div class="state-dot" style="background:${done ? 'var(--ok)' : active ? item.color : 'var(--border)'}"></div>
+      <span>Item ${item.label} → ${zone.label}</span>
+    </div>`;
+  }).join('') + (state === 'ALL_DONE'
+    ? `<div style="margin-top:8px;font-size:11px;color:var(--ok);font-weight:600">✓ All tasks complete</div>`
+    : '');
+}
+
+function renderStateList() {
+  const currentIdx = STATE_ORDER.indexOf(state);
+  const el = document.getElementById('state-list');
+  el.innerHTML = STATE_ORDER.map((s, i) => {
+    const active = i === currentIdx;
+    const past   = i < currentIdx;
+    return `<div class="state-row ${active ? 'state-current' : ''} ${past ? 'state-past' : ''}">
+      <div class="state-dot"></div>
+      <span>${STATE_LABELS[s]}</span>
+    </div>`;
+  }).join('');
+}
+
+function updateUI() {
+  renderTaskList();
+  renderStateList();
+  document.getElementById('r-col').textContent   = robot.x.toFixed(1);
+  document.getElementById('r-row').textContent   = robot.y.toFixed(1);
+  document.getElementById('r-theta').textContent = (robot.theta * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('r-v').textContent     = robot.v.toFixed(2);
+  document.getElementById('a-1').textContent     = armAngles[0].toFixed(1) + '°';
+  document.getElementById('a-2').textContent     = armAngles[1].toFixed(1) + '°';
+  document.getElementById('a-3').textContent     = armAngles[2].toFixed(1) + '°';
+  document.getElementById('a-grip').textContent  = gripT > 0.5 ? 'Closed' : 'Open';
+}
+
+// ─── Controls ─────────────────────────────────────────────────────────────────
+let speed = 1.0;
+
+document.getElementById('btn-auto').addEventListener('click', () => {
+  autoRun = !autoRun;
+  document.getElementById('btn-auto').classList.toggle('active', autoRun);
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  robot = { x: 28, y: 22, theta: 0, v: 0, omega: 0 };
+  armAngles  = [0, -150, 150];
+  armTarget  = [0, -150, 150];
+  armVisible = false;
+  gripT      = 0;
+  heldItem   = null;
+  placedItems = [];
+  path    = [];
+  pathIdx = 0;
+  navGoal = null;
+  taskIdx = 0;
+  state   = 'IDLE';
+  stateTimer = 0;
+  stateJustEntered = false;
+  SHELVES.forEach(s => s.items.forEach(it => { it.picked = false; }));
+});
+
+document.getElementById('s-speed').addEventListener('input', e => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('v-speed').textContent = speed.toFixed(1) + '×';
+});
+
+// ─── Animate loop ─────────────────────────────────────────────────────────────
+let lastTS = null;
+let pulseT = 0;
+
+function armCloseEnough(threshold) {
+  return armAngles.every((a, i) => {
+    const diff = ((armTarget[i] - a + 540) % 360) - 180;
+    return Math.abs(diff) < threshold;
+  });
+}
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+
+  const rawDt = lastTS === null ? 0 : Math.min(ts - lastTS, 80);
+  lastTS = ts;
+  const dt = (rawDt / 1000) * speed;
+  pulseT  += rawDt * 0.003;
+  stateTimer += rawDt * speed;
+
+  const task = TASKS[taskIdx];
+
+  // Arm smooth interpolation — runs every frame
+  const ks = 1 - Math.pow(0.002, dt * 9);
+  for (let i = 0; i < 3; i++) {
+    armAngles[i] = lerpAngle(armAngles[i], armTarget[i], ks);
+  }
+
+  switch (state) {
+    case 'IDLE':
+      armTarget  = [0, -150, 150];
+      armVisible = false;
+      robot.v     *= Math.max(0, 1 - dt * 6);
+      robot.omega *= Math.max(0, 1 - dt * 6);
+      if (autoRun && task && stateTimer > 1000) transition('NAV_TO_SHELF');
+      break;
+
+    case 'NAV_TO_SHELF': {
+      const shelf = SHELVES[task.shelfIdx];
+      if (!navGoal || navGoal.c !== shelf.approachC || navGoal.r !== shelf.approachR) {
+        navigateTo(shelf.approachC, shelf.approachR);
+      }
+      updateRobot(dt);
+      if (Math.hypot(robot.x - shelf.approachC, robot.y - shelf.approachR) < ARRIVE_DIST) {
+        robot.v = 0;
+        transition('FACE_SHELF');
+      }
+      break;
+    }
+
+    case 'FACE_SHELF': {
+      const shelf = SHELVES[task.shelfIdx];
+      const done  = faceAngle(shelf.faceTheta, dt);
+      if (done) transition('ARM_EXTEND_PICK');
+      break;
+    }
+
+    case 'ARM_EXTEND_PICK': {
+      armVisible = true;
+      const shelf = SHELVES[task.shelfIdx];
+      const item  = shelf.items[task.itemIdx];
+      const sol   = ikArm(item.offsetMm);
+      if (sol) armTarget = sol;
+      if (armCloseEnough(5) && stateTimer > 400) transition('GRIP');
+      break;
+    }
+
+    case 'GRIP':
+      armVisible = true;
+      if (stateJustEntered) {
+        stateJustEntered = false;
+        heldItem = SHELVES[task.shelfIdx].items[task.itemIdx];
+        heldItem.picked = true;
+      }
+      gripT = Math.min(stateTimer / 400, 1);
+      if (gripT >= 1) transition('ARM_RETRACT_PICK');
+      break;
+
+    case 'ARM_RETRACT_PICK':
+      armVisible = true;
+      armTarget  = [0, -150, 150];
+      if (armCloseEnough(8) && stateTimer > 500) {
+        armVisible = false;
+        transition('NAV_TO_ZONE');
+      }
+      break;
+
+    case 'NAV_TO_ZONE': {
+      const zone = DROP_ZONES[task.zoneIdx];
+      if (!navGoal || navGoal.c !== zone.approaching.c || navGoal.r !== zone.approaching.r) {
+        navigateTo(zone.approaching.c, zone.approaching.r);
+      }
+      updateRobot(dt);
+      if (Math.hypot(robot.x - zone.approaching.c, robot.y - zone.approaching.r) < ARRIVE_DIST) {
+        robot.v = 0;
+        transition('FACE_ZONE');
+      }
+      break;
+    }
+
+    case 'FACE_ZONE': {
+      const zone = DROP_ZONES[task.zoneIdx];
+      const done = faceAngle(zone.faceTheta, dt);
+      if (done) transition('ARM_EXTEND_PLACE');
+      break;
+    }
+
+    case 'ARM_EXTEND_PLACE': {
+      armVisible = true;
+      const sol  = ikArm(360);
+      if (sol) armTarget = sol;
+      if (armCloseEnough(5) && stateTimer > 400) transition('RELEASE');
+      break;
+    }
+
+    case 'RELEASE':
+      armVisible = true;
+      if (stateJustEntered) {
+        stateJustEntered = false;
+        if (heldItem) {
+          placedItems.push({ zoneIdx: task.zoneIdx, color: heldItem.color, label: heldItem.label });
+          heldItem = null;
+        }
+      }
+      gripT = Math.max(1 - stateTimer / 400, 0);
+      if (gripT <= 0) transition('ARM_RETRACT_PLACE');
+      break;
+
+    case 'ARM_RETRACT_PLACE':
+      armVisible = true;
+      armTarget  = [0, -150, 150];
+      if (armCloseEnough(8) && stateTimer > 500) {
+        armVisible = false;
+        transition('TASK_COMPLETE');
+      }
+      break;
+
+    case 'TASK_COMPLETE':
+      if (stateTimer > 600) {
+        taskIdx++;
+        if (taskIdx >= TASKS.length) transition('ALL_DONE');
+        else transition('IDLE');
+      }
+      break;
+
+    case 'ALL_DONE':
+      armVisible = false;
+      robot.v     *= Math.max(0, 1 - dt * 4);
+      robot.omega *= Math.max(0, 1 - dt * 4);
+      break;
+  }
+
+  // Clear stateJustEntered if it wasn't consumed in GRIP/RELEASE
+  // (it was already cleared in those cases)
+  if (stateJustEntered && state !== 'GRIP' && state !== 'RELEASE') {
+    stateJustEntered = false;
+  }
+
+  draw();
+  updateUI();
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

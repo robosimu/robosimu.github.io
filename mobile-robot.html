@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16161a">
+<title>Mobile Robot — Level 4</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #16161a;
+  --surface:   #1e1e24;
+  --raised:    #252530;
+  --border:    #2e2e3a;
+  --text:      #e8e8e0;
+  --text-sec:  #8888a0;
+  --text-mute: #555568;
+  --accent:    #d4884a;
+  --accent-lit:#e8a060;
+  --ok:        #60c080;
+  --radius:    2px;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100dvh;
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  background: #141418;
+  overflow: hidden;
+  position: relative;
+}
+
+canvas {
+  display: block;
+}
+
+#sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-header {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-link {
+  display: inline-block;
+  color: var(--text-mute);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  transition: color 0.15s;
+}
+
+.back-link:hover { color: var(--text-sec); }
+
+@media (prefers-reduced-motion: reduce) {
+  .back-link { transition: none; }
+}
+
+.sidebar-header h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0.03em;
+}
+
+.section {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 10px;
+}
+
+.grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.readout {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.readout-label {
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.readout-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+button {
+  flex: 1;
+  min-height: 44px;
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+button:hover {
+  background: #2e2e3c;
+  border-color: #3e3e50;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  height: 4px;
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.joint-name {
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.joint-val {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-sec);
+  line-height: 1.4;
+}
+
+#nav-dot {
+  border-radius: 50%;
+  transition: background 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #nav-dot { transition: none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="sim-canvas"></canvas>
+  </div>
+
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <a href="index.html" class="back-link">← Learning Path</a>
+      <h1>Mobile Robot</h1>
+      <p>Level 4 — Navigation</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Status</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="nav-dot" style="width:8px;height:8px;background:var(--text-mute);flex-shrink:0"></div>
+        <span id="nav-status" style="font-size:13px;font-weight:600">Idle</span>
+      </div>
+      <p id="nav-hint" style="font-size:11px;color:var(--text-mute);margin-top:6px">Click anywhere on the map to set a navigation goal.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Robot</div>
+      <div class="grid-2x2">
+        <div class="readout"><div class="readout-label">Col</div><div class="readout-val" id="r-col">—</div></div>
+        <div class="readout"><div class="readout-label">Row</div><div class="readout-val" id="r-row">—</div></div>
+        <div class="readout"><div class="readout-label">Heading</div><div class="readout-val" id="r-theta">—</div></div>
+        <div class="readout"><div class="readout-label">Speed</div><div class="readout-val" id="r-speed">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Navigation</div>
+      <div class="grid-2x2">
+        <div class="readout"><div class="readout-label">Goal Col</div><div class="readout-val" id="g-col">—</div></div>
+        <div class="readout"><div class="readout-label">Goal Row</div><div class="readout-val" id="g-row">—</div></div>
+        <div class="readout"><div class="readout-label">Distance</div><div class="readout-val" id="g-dist">—</div></div>
+        <div class="readout"><div class="readout-label">Waypoints</div><div class="readout-val" id="g-wpts">—</div></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Controls</div>
+      <div class="btn-row">
+        <button id="btn-reset">Reset Robot</button>
+        <button id="btn-clear">Clear Goal</button>
+      </div>
+      <div style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+          <span class="joint-name">Sim Speed</span>
+          <span id="v-speed" class="joint-val">1.0×</span>
+        </div>
+        <input type="range" id="s-speed" min="0.3" max="4" step="0.1" value="1">
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-label">How It Works</div>
+      <ul class="legend-list">
+        <li class="legend-item">
+          <div style="width:20px;height:3px;background:rgba(212,136,74,0.6);flex-shrink:0"></div>
+          <span>Planned path (A* search)</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:14px;height:14px;border:2px solid #4a90d8;border-radius:50%;flex-shrink:0"></div>
+          <span>Robot (diff-drive)</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:20px;height:12px;background:rgba(100,180,255,0.15);border:1px solid rgba(100,180,255,0.3);flex-shrink:0"></div>
+          <span>Sensor cone (20 rays)</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:14px;height:14px;border:2px solid #60c080;flex-shrink:0"></div>
+          <span>Navigation goal</span>
+        </li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+const COLS = 52, ROWS = 36;
+
+function buildMap() {
+  const map = [];
+  for (let r = 0; r < ROWS; r++) map.push(new Uint8Array(COLS));
+
+  function hwall(r, c0, c1) { for (let c = c0; c <= c1; c++) map[r][c] = 1; }
+  function vwall(c, r0, r1) { for (let r = r0; r <= r1; r++) map[r][c] = 1; }
+  function rect(r0, c0, r1, c1) { for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) map[r][c] = 1; }
+
+  // Outer perimeter
+  hwall(0, 0, COLS-1); hwall(ROWS-1, 0, COLS-1);
+  vwall(0, 0, ROWS-1); vwall(COLS-1, 0, ROWS-1);
+
+  // Top-left room (rows 1-11, cols 1-15) — door gap at col 8-9 in bottom wall
+  hwall(1, 1, 15); vwall(1, 1, 11); vwall(15, 1, 11);
+  hwall(11, 1, 7); hwall(11, 10, 15);
+
+  // Top-right room (rows 1-11, cols 36-50) — door gap at col 43-44 in bottom wall
+  hwall(1, 36, 50); vwall(36, 1, 11); vwall(50, 1, 11);
+  hwall(11, 36, 42); hwall(11, 45, 50);
+
+  // Horizontal corridor wall (row 18) — gaps at cols 10-12, 24-26, 38-40
+  hwall(18, 1, 9); hwall(18, 13, 23); hwall(18, 27, 37); hwall(18, 41, 50);
+
+  // Bottom-left room (rows 24-34, cols 1-16) — door gap at col 6-7 in top wall
+  hwall(24, 1, 5); hwall(24, 8, 16);
+  vwall(1, 24, 34); vwall(16, 24, 34); hwall(34, 1, 16);
+
+  // Bottom-right room (rows 24-34, cols 35-50) — door gap at col 43-44 in top wall
+  hwall(24, 35, 42); hwall(24, 45, 50);
+  vwall(35, 24, 34); vwall(50, 24, 34); hwall(34, 35, 50);
+
+  // Central pillars / obstacles
+  rect(13, 20, 15, 22);
+  rect(13, 29, 15, 31);
+  rect(21, 8, 22, 10);
+  rect(21, 41, 22, 43);
+  rect(26, 24, 28, 26);
+  rect(26, 33, 28, 35);
+
+  return map;
+}
+
+const map = buildMap();
+
+function isSafe(c, r) {
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) return false;
+      if (map[nr][nc] === 1) return false;
+    }
+  return true;
+}
+
+let safeMap;
+function buildSafeMap() {
+  safeMap = [];
+  for (let r = 0; r < ROWS; r++) {
+    safeMap.push(new Uint8Array(COLS));
+    for (let c = 0; c < COLS; c++)
+      safeMap[r][c] = isSafe(c, r) ? 1 : 0;
+  }
+}
+
+buildSafeMap();
+
+class MinHeap {
+  constructor() { this.data = []; }
+  push(item) { this.data.push(item); this._up(this.data.length - 1); }
+  pop() {
+    const top = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length) { this.data[0] = last; this._down(0); }
+    return top;
+  }
+  get size() { return this.data.length; }
+  _up(i) {
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.data[p].f <= this.data[i].f) break;
+      [this.data[p], this.data[i]] = [this.data[i], this.data[p]]; i = p;
+    }
+  }
+  _down(i) {
+    const n = this.data.length;
+    for (;;) {
+      let s = i, l = 2 * i + 1, r = 2 * i + 2;
+      if (l < n && this.data[l].f < this.data[s].f) s = l;
+      if (r < n && this.data[r].f < this.data[s].f) s = r;
+      if (s === i) break;
+      [this.data[s], this.data[i]] = [this.data[i], this.data[s]]; i = s;
+    }
+  }
+}
+
+const DIRS8 = [
+  [0, 1, 1], [0, -1, 1], [1, 0, 1], [-1, 0, 1],
+  [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]
+];
+
+function aStar(startC, startR, goalC, goalR) {
+  if (!safeMap[goalR][goalC]) return null;
+  const dist = Array.from({ length: ROWS }, () => new Float32Array(COLS).fill(Infinity));
+  const prev = Array.from({ length: ROWS }, () => new Array(COLS).fill(null));
+  dist[startR][startC] = 0;
+  const heap = new MinHeap();
+  heap.push({ c: startC, r: startR, f: 0 });
+
+  while (heap.size > 0) {
+    const { c, r } = heap.pop();
+    if (c === goalC && r === goalR) break;
+    if (dist[r][c] === Infinity) continue;
+
+    for (const [dc, dr, cost] of DIRS8) {
+      const nc = c + dc, nr = r + dr;
+      if (nc < 0 || nc >= COLS || nr < 0 || nr >= ROWS) continue;
+      if (!safeMap[nr][nc]) continue;
+      const nd = dist[r][c] + cost;
+      if (nd < dist[nr][nc]) {
+        dist[nr][nc] = nd;
+        prev[nr][nc] = [c, r];
+        const h = Math.hypot(goalC - nc, goalR - nr);
+        heap.push({ c: nc, r: nr, f: nd + h });
+      }
+    }
+  }
+
+  if (dist[goalR][goalC] === Infinity) return null;
+
+  const path = [];
+  let c = goalC, r = goalR;
+  while (c !== startC || r !== startR) {
+    path.push({ c, r });
+    [c, r] = prev[r][c];
+  }
+  path.push({ c: startC, r: startR });
+  return path.reverse();
+}
+
+const ROBOT_RADIUS  = 0.55;
+const MAX_SPEED     = 5.5;
+const MAX_OMEGA     = 3.2;
+const KP_HEADING    = 2.8;
+const WAYPOINT_DIST = 1.2;
+const SLOWDOWN_DIST = 3.0;
+const ARRIVE_DIST   = 0.4;
+
+let robot = { x: 3.5, y: 3.5, theta: 0, v: 0, omega: 0 };
+
+let goal       = null;
+let path       = [];
+let pathIdx    = 0;
+let navState   = 'IDLE';
+let arrivedTimer = 0;
+
+function setGoal(col, row) {
+  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return;
+  if (!safeMap[row][col]) return;
+
+  goal = { c: col, r: row };
+  const startC = Math.max(1, Math.min(COLS - 2, Math.round(robot.x)));
+  const startR = Math.max(1, Math.min(ROWS - 2, Math.round(robot.y)));
+  const result = aStar(startC, startR, col, row);
+  if (!result || result.length < 2) return;
+  path = result;
+  pathIdx = 1;
+  navState = 'NAVIGATING';
+  arrivedTimer = 0;
+}
+
+function updateRobot(dt) {
+  if (navState !== 'NAVIGATING' || path.length === 0) {
+    robot.v     += (0 - robot.v)     * Math.min(1, dt * 6);
+    robot.omega += (0 - robot.omega) * Math.min(1, dt * 6);
+  } else {
+    while (pathIdx < path.length - 1) {
+      const wp = path[pathIdx];
+      const d = Math.hypot(wp.c - robot.x, wp.r - robot.y);
+      if (d < WAYPOINT_DIST) pathIdx++;
+      else break;
+    }
+
+    const wp = path[pathIdx];
+    const dx = wp.c - robot.x, dy = wp.r - robot.y;
+    const distToGoal = Math.hypot(goal.c - robot.x, goal.r - robot.y);
+
+    if (distToGoal < ARRIVE_DIST) {
+      navState = 'ARRIVED';
+      arrivedTimer = 0;
+      robot.v = 0; robot.omega = 0;
+      return;
+    }
+
+    const targetTheta = Math.atan2(dy, dx);
+    let err = targetTheta - robot.theta;
+    while (err >  Math.PI) err -= 2 * Math.PI;
+    while (err < -Math.PI) err += 2 * Math.PI;
+
+    const targetOmega = Math.max(-MAX_OMEGA, Math.min(MAX_OMEGA, KP_HEADING * err));
+    robot.omega += (targetOmega - robot.omega) * Math.min(1, dt * 8);
+
+    const turnFactor = Math.max(0.15, 1 - Math.abs(err) / Math.PI * 1.4);
+    const goalFactor = Math.min(1, distToGoal / SLOWDOWN_DIST);
+    const targetV = MAX_SPEED * turnFactor * goalFactor;
+    robot.v += (targetV - robot.v) * Math.min(1, dt * 5);
+  }
+
+  robot.x += robot.v * Math.cos(robot.theta) * dt;
+  robot.y += robot.v * Math.sin(robot.theta) * dt;
+  robot.theta += robot.omega * dt;
+
+  robot.x = Math.max(1, Math.min(COLS - 2, robot.x));
+  robot.y = Math.max(1, Math.min(ROWS - 2, robot.y));
+}
+
+function castRays() {
+  const rays = [];
+  const N = 20, RANGE = 7, SPREAD = Math.PI * (200 / 180);
+  for (let i = 0; i < N; i++) {
+    const angle = robot.theta - SPREAD / 2 + (i / (N - 1)) * SPREAD;
+    let dist = RANGE;
+    for (let d = 0.3; d <= RANGE; d += 0.3) {
+      const rc = robot.x + Math.cos(angle) * d;
+      const rr = robot.y + Math.sin(angle) * d;
+      const ic = Math.floor(rc), ir = Math.floor(rr);
+      if (ic < 0 || ic >= COLS || ir < 0 || ir >= ROWS || map[ir][ic] === 1) {
+        dist = d; break;
+      }
+    }
+    rays.push({ angle, dist });
+  }
+  return rays;
+}
+
+const canvas = document.getElementById('sim-canvas');
+const ctx = canvas.getContext('2d');
+let cellSize = 14;
+
+function cx(col) { return col * cellSize; }
+function cy(row) { return row * cellSize; }
+
+function drawMap() {
+  ctx.fillStyle = '#141418';
+  ctx.fillRect(0, 0, canvas.width / devicePixelRatio, canvas.height / devicePixelRatio);
+
+  ctx.fillStyle = '#2a2a38';
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (map[r][c] === 1) {
+        ctx.fillRect(cx(c), cy(r), cellSize, cellSize);
+      }
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 0.5;
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (map[r][c] === 1) {
+        ctx.beginPath();
+        ctx.moveTo(cx(c), cy(r));
+        ctx.lineTo(cx(c) + cellSize, cy(r));
+        ctx.stroke();
+      }
+    }
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  for (let c = 0; c <= COLS; c++) {
+    ctx.moveTo(cx(c), 0);
+    ctx.lineTo(cx(c), cy(ROWS));
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.moveTo(0, cy(r));
+    ctx.lineTo(cx(COLS), cy(r));
+  }
+  ctx.stroke();
+}
+
+function drawPath() {
+  if (!path.length || navState !== 'NAVIGATING') return;
+  if (pathIdx >= path.length) return;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(212, 136, 74, 0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.lineDashOffset = 0;
+  ctx.lineJoin = 'round';
+
+  ctx.beginPath();
+  ctx.moveTo(cx(path[pathIdx].c) + cellSize * 0.5, cy(path[pathIdx].r) + cellSize * 0.5);
+  for (let i = pathIdx + 1; i < path.length; i++) {
+    ctx.lineTo(cx(path[i].c) + cellSize * 0.5, cy(path[i].r) + cellSize * 0.5);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = 'rgba(212,136,74,0.3)';
+  for (let i = pathIdx; i < path.length; i++) {
+    ctx.beginPath();
+    ctx.arc(cx(path[i].c) + cellSize * 0.5, cy(path[i].r) + cellSize * 0.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGoal(pulseT) {
+  if (!goal) return;
+  const gx = cx(goal.c) + cellSize * 0.5;
+  const gy = cy(goal.r) + cellSize * 0.5;
+  const reachable = path.length > 0 || navState === 'ARRIVED';
+  const color = reachable ? '#60c080' : '#e05050';
+  const alphaColor = reachable ? 'rgba(96,192,128,' : 'rgba(224,80,80,';
+
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+
+  const armLen = 8;
+  ctx.beginPath();
+  ctx.moveTo(gx - armLen, gy); ctx.lineTo(gx - 3, gy);
+  ctx.moveTo(gx + 3, gy);     ctx.lineTo(gx + armLen, gy);
+  ctx.moveTo(gx, gy - armLen); ctx.lineTo(gx, gy - 3);
+  ctx.moveTo(gx, gy + 3);     ctx.lineTo(gx, gy + armLen);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(gx, gy, 5, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const pulseAlpha = Math.sin(pulseT) * 0.3 + 0.1;
+  ctx.strokeStyle = alphaColor + pulseAlpha.toFixed(3) + ')';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(gx, gy, 8, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSensors(rays) {
+  const rx = cx(robot.x), ry = cy(robot.y);
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(rx, ry);
+  for (const ray of rays) {
+    const ex = rx + Math.cos(ray.angle) * ray.dist * cellSize;
+    const ey = ry + Math.sin(ray.angle) * ray.dist * cellSize;
+    ctx.lineTo(ex, ey);
+  }
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(100, 180, 255, 0.06)';
+  ctx.fill();
+
+  ctx.beginPath();
+  let first = true;
+  for (const ray of rays) {
+    const ex = rx + Math.cos(ray.angle) * ray.dist * cellSize;
+    const ey = ry + Math.sin(ray.angle) * ray.dist * cellSize;
+    if (first) { ctx.moveTo(ex, ey); first = false; }
+    else ctx.lineTo(ex, ey);
+  }
+  ctx.strokeStyle = 'rgba(100, 180, 255, 0.2)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(100,180,255,0.4)';
+  for (const ray of rays) {
+    const ex = rx + Math.cos(ray.angle) * ray.dist * cellSize;
+    const ey = ry + Math.sin(ray.angle) * ray.dist * cellSize;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawRobot() {
+  const rx = cx(robot.x), ry = cy(robot.y);
+  const rad = ROBOT_RADIUS * cellSize;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(74,144,216,0.4)';
+  ctx.shadowBlur = cellSize * 0.8;
+
+  ctx.beginPath();
+  ctx.arc(rx, ry, rad, 0, Math.PI * 2);
+  ctx.fillStyle = '#1e2840';
+  ctx.fill();
+  ctx.strokeStyle = '#4a90d8';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Wheel indicators
+  const cos = Math.cos(robot.theta);
+  const sin = Math.sin(robot.theta);
+  const perpX = -sin, perpY = cos;
+  const wheelOffset = rad * 0.85;
+  const wheelLen = rad * 0.55;
+  const wheelW = rad * 0.22;
+
+  ctx.save();
+  ctx.fillStyle = '#2a3858';
+  for (const side of [-1, 1]) {
+    const wx = rx + perpX * side * wheelOffset;
+    const wy = ry + perpY * side * wheelOffset;
+    ctx.save();
+    ctx.translate(wx, wy);
+    ctx.rotate(robot.theta);
+    ctx.fillRect(-wheelLen / 2, -wheelW / 2, wheelLen, wheelW);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Direction arrow
+  const arrowLen = ROBOT_RADIUS * cellSize * 0.85;
+  const tipX = rx + Math.cos(robot.theta) * arrowLen;
+  const tipY = ry + Math.sin(robot.theta) * arrowLen;
+
+  ctx.save();
+  ctx.strokeStyle = '#7ab8f0';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(rx, ry);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+
+  // Arrowhead
+  const headLen = cellSize * 0.35;
+  const headAngle = 0.45;
+  const backAngle1 = robot.theta + Math.PI - headAngle;
+  const backAngle2 = robot.theta + Math.PI + headAngle;
+  ctx.fillStyle = '#7ab8f0';
+  ctx.beginPath();
+  ctx.moveTo(tipX, tipY);
+  ctx.lineTo(tipX + Math.cos(backAngle1) * headLen, tipY + Math.sin(backAngle1) * headLen);
+  ctx.lineTo(tipX + Math.cos(backAngle2) * headLen, tipY + Math.sin(backAngle2) * headLen);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawRuler() {
+  const margin = 10;
+  const rulerY = cy(ROWS) - margin - 14;
+  const rulerX = margin;
+  const rulerLen = cellSize;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.lineCap = 'square';
+
+  ctx.beginPath();
+  ctx.moveTo(rulerX, rulerY);
+  ctx.lineTo(rulerX + rulerLen, rulerY);
+  ctx.moveTo(rulerX, rulerY - 4);
+  ctx.lineTo(rulerX, rulerY + 4);
+  ctx.moveTo(rulerX + rulerLen, rulerY - 4);
+  ctx.lineTo(rulerX + rulerLen, rulerY + 4);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = `10px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim()}`;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText('1 cell', rulerX + rulerLen + 5, rulerY - 5);
+  ctx.restore();
+}
+
+function draw(rays, pulseT) {
+  const W = canvas.width / devicePixelRatio;
+  const H = canvas.height / devicePixelRatio;
+
+  ctx.clearRect(0, 0, W, H);
+  drawMap();
+  drawPath();
+  drawGoal(pulseT);
+  drawSensors(rays);
+  drawRobot();
+  drawRuler();
+}
+
+function updateUI() {
+  const dot      = document.getElementById('nav-dot');
+  const statusEl = document.getElementById('nav-status');
+  const hint     = document.getElementById('nav-hint');
+
+  if (navState === 'IDLE') {
+    dot.style.background = 'var(--text-mute)';
+    statusEl.textContent = 'Idle';
+    statusEl.style.color = 'var(--text-sec)';
+    hint.textContent = 'Click anywhere on the map to set a navigation goal.';
+  } else if (navState === 'NAVIGATING') {
+    dot.style.background = '#4a90d8';
+    statusEl.textContent = 'Navigating';
+    statusEl.style.color = '#4a90d8';
+    hint.textContent = 'Following A* path. PID heading controller active.';
+  } else if (navState === 'ARRIVED') {
+    dot.style.background = '#60c080';
+    statusEl.textContent = 'Arrived';
+    statusEl.style.color = '#60c080';
+    hint.textContent = 'Goal reached.';
+  }
+
+  document.getElementById('r-col').textContent   = robot.x.toFixed(1);
+  document.getElementById('r-row').textContent   = robot.y.toFixed(1);
+  document.getElementById('r-theta').textContent = (robot.theta * 180 / Math.PI).toFixed(1) + '°';
+  document.getElementById('r-speed').textContent = (robot.v * cellSize / 10).toFixed(1) + ' u/s';
+
+  if (goal) {
+    document.getElementById('g-col').textContent  = goal.c;
+    document.getElementById('g-row').textContent  = goal.r;
+    document.getElementById('g-dist').textContent = Math.hypot(goal.c - robot.x, goal.r - robot.y).toFixed(1);
+    document.getElementById('g-wpts').textContent = Math.max(0, path.length - pathIdx);
+  } else {
+    ['g-col', 'g-row', 'g-dist', 'g-wpts'].forEach(id => document.getElementById(id).textContent = '—');
+  }
+}
+
+let lastTS = null;
+let pulseT = 0;
+let speed  = 1.0;
+
+function animate(ts) {
+  requestAnimationFrame(animate);
+  const rawDt = lastTS === null ? 0 : Math.min(ts - lastTS, 80);
+  lastTS = ts;
+  const dt = (rawDt / 1000) * speed;
+  pulseT += rawDt * 0.003;
+
+  if (navState === 'ARRIVED') {
+    arrivedTimer += rawDt;
+    if (arrivedTimer > 2000) navState = 'IDLE';
+  }
+
+  updateRobot(dt);
+
+  const rays = castRays();
+  draw(rays, pulseT);
+  updateUI();
+}
+
+function resize() {
+  const wrap = canvas.parentElement;
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  canvas.width  = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  cellSize = Math.min(W / COLS, H / ROWS);
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const col = Math.floor((e.clientX - rect.left) / cellSize);
+  const row = Math.floor((e.clientY - rect.top)  / cellSize);
+  setGoal(col, row);
+});
+
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const col = Math.floor((e.clientX - rect.left) / cellSize);
+  const row = Math.floor((e.clientY - rect.top)  / cellSize);
+  const safe = col >= 0 && col < COLS && row >= 0 && row < ROWS && safeMap[row]?.[col];
+  canvas.style.cursor = safe ? 'crosshair' : 'not-allowed';
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  robot = { x: 3.5, y: 3.5, theta: 0, v: 0, omega: 0 };
+  goal = null; path = []; pathIdx = 0; navState = 'IDLE';
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  goal = null; path = []; navState = 'IDLE';
+  robot.v = 0; robot.omega = 0;
+});
+
+document.getElementById('s-speed').addEventListener('input', e => {
+  speed = parseFloat(e.target.value);
+  document.getElementById('v-speed').textContent = speed.toFixed(1) + '×';
+});
+
+resize();
+window.addEventListener('resize', resize);
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

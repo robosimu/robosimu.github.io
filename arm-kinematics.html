@@ -1,0 +1,1282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#16161a">
+<title>3-DOF Planar Arm — Forward &amp; Inverse Kinematics</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #16161a;
+  --surface:   #1e1e24;
+  --raised:    #252530;
+  --border:    #2e2e3a;
+  --text:      #e8e8e0;
+  --text-sec:  #8888a0;
+  --text-mute: #555568;
+  --arm:       #d4884a;
+  --joint:     #f0a060;
+  --tcp:       #e05050;
+  --accent:    #d4884a;
+  --ok:        #60c080;
+  --warn:      #e0b040;
+  --sidebar:   280px;
+  --gap:       16px;
+  --radius:    2px;
+  --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-ui:   -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow: hidden;
+}
+
+#app {
+  display: flex;
+  height: 100dvh;
+  width: 100vw;
+}
+
+#canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  background: var(--bg);
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── Sidebar ─────────────────────────────────── */
+#sidebar {
+  width: var(--sidebar);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+}
+
+.sidebar-header {
+  padding: 18px var(--gap) 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--raised);
+}
+
+.sidebar-header h1 {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.sidebar-header p {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 3px;
+}
+
+.section {
+  padding: var(--gap);
+  border-bottom: 1px solid var(--border);
+}
+
+.section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 12px;
+}
+
+/* ── Sliders ─────────────────────────────────── */
+.joint-row {
+  margin-bottom: 14px;
+}
+
+.joint-row:last-child { margin-bottom: 0; }
+
+.joint-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.joint-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sec);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.joint-val {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--arm);
+  min-width: 52px;
+  text-align: right;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 0;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--joint);
+  cursor: pointer;
+  border: 2px solid var(--raised);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 0 transparent;
+  transition: box-shadow 0.15s;
+}
+
+input[type=range]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5), 0 0 0 2px var(--accent);
+}
+
+input[type=range]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--joint);
+  cursor: pointer;
+  border: 2px solid var(--raised);
+}
+
+input[type=range]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Readout grids ───────────────────────────── */
+.grid-2x2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.readout {
+  background: var(--raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.readout-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-bottom: 4px;
+}
+
+.readout-val {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── Buttons ─────────────────────────────────── */
+.btn-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+button {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  min-height: 44px;
+  padding: 0 14px;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  background: var(--raised);
+  color: var(--text-sec);
+}
+
+button:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button.active {
+  background: var(--arm);
+  border-color: var(--arm);
+  color: #0f0f0f;
+}
+
+button.active:hover {
+  background: var(--joint);
+  border-color: var(--joint);
+}
+
+.btn-demo { flex: 1.5; }
+.btn-reset { flex: 1; }
+
+/* Speed slider row */
+.speed-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.speed-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
+.speed-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--arm);
+  white-space: nowrap;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* ── IK status dot ───────────────────────────── */
+#ik-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+/* ── Legend ──────────────────────────────────── */
+.legend-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+}
+
+.legend-line {
+  width: 20px;
+  height: 3px;
+  flex-shrink: 0;
+  border-radius: 0;
+}
+
+/* ── Reduced motion ──────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  button, input[type=range]::-webkit-slider-thumb {
+    transition: none;
+  }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="canvas-wrap">
+    <canvas id="c"></canvas>
+  </div>
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <h1>3-DOF Planar Arm</h1>
+      <p>Forward &amp; Inverse Kinematics</p>
+    </div>
+
+    <!-- Joint Angles -->
+    <div class="section">
+      <div class="section-label">Joint Angles</div>
+      <div class="joint-row">
+        <div class="joint-header">
+          <span class="joint-name">θ1 Shoulder</span>
+          <span class="joint-val" id="v1">0°</span>
+        </div>
+        <input type="range" id="s1" min="-180" max="180" value="0" step="0.5">
+      </div>
+      <div class="joint-row">
+        <div class="joint-header">
+          <span class="joint-name">θ2 Elbow</span>
+          <span class="joint-val" id="v2">0°</span>
+        </div>
+        <input type="range" id="s2" min="-150" max="150" value="0" step="0.5">
+      </div>
+      <div class="joint-row">
+        <div class="joint-header">
+          <span class="joint-name">θ3 Wrist</span>
+          <span class="joint-val" id="v3">0°</span>
+        </div>
+        <input type="range" id="s3" min="-180" max="180" value="0" step="0.5">
+      </div>
+    </div>
+
+    <!-- End-Effector -->
+    <div class="section">
+      <div class="section-label">End-Effector (TCP)</div>
+      <div class="grid-2x2">
+        <div class="readout">
+          <div class="readout-label">X (mm)</div>
+          <div class="readout-val" id="ee-x">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Y (mm)</div>
+          <div class="readout-val" id="ee-y">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Angle (°)</div>
+          <div class="readout-val" id="ee-a">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Reach (mm)</div>
+          <div class="readout-val" id="ee-r">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Joint Positions -->
+    <div class="section">
+      <div class="section-label">Joint Positions (mm)</div>
+      <div class="grid-2x2">
+        <div class="readout">
+          <div class="readout-label">J2 X</div>
+          <div class="readout-val" id="j2-x">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">J2 Y</div>
+          <div class="readout-val" id="j2-y">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">J3 X</div>
+          <div class="readout-val" id="j3-x">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">J3 Y</div>
+          <div class="readout-val" id="j3-y">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inverse Kinematics -->
+    <div class="section" id="ik-section">
+      <div class="section-label">Inverse Kinematics</div>
+
+      <div class="btn-row" style="margin-bottom:12px">
+        <button id="btn-ik" class="btn-demo">IK Mode</button>
+        <button id="btn-clear-target">Clear</button>
+      </div>
+
+      <div id="ik-status-row" style="margin-bottom:12px;display:flex;align-items:center;gap:8px">
+        <div id="ik-dot" style="background:var(--text-mute)"></div>
+        <span id="ik-status-text" style="font-size:11px;color:var(--text-sec)">Click canvas to set target</span>
+      </div>
+
+      <div class="grid-2x2" style="margin-bottom:12px">
+        <div class="readout">
+          <div class="readout-label">Target X</div>
+          <div class="readout-val" id="tgt-x">—</div>
+        </div>
+        <div class="readout">
+          <div class="readout-label">Target Y</div>
+          <div class="readout-val" id="tgt-y">—</div>
+        </div>
+      </div>
+
+      <div class="joint-row" style="margin-bottom:12px">
+        <div class="joint-header">
+          <span class="joint-name">EE Angle</span>
+          <span class="joint-val" id="v-ee-angle">-90°</span>
+        </div>
+        <input type="range" id="s-ee-angle" min="-180" max="180" value="-90" step="1">
+      </div>
+
+      <div class="btn-row">
+        <button id="btn-elbow-up" class="active" style="flex:1">Elbow Up</button>
+        <button id="btn-elbow-down" style="flex:1">Elbow Down</button>
+      </div>
+    </div>
+
+    <!-- Playback -->
+    <div class="section">
+      <div class="section-label">Playback</div>
+      <div class="btn-row">
+        <button id="btn-demo" class="btn-demo active" aria-pressed="true">Auto Demo</button>
+        <button id="btn-reset" class="btn-reset">Reset</button>
+      </div>
+      <div class="speed-row">
+        <span class="speed-label">Speed</span>
+        <input type="range" id="s-speed" min="0.2" max="3" step="0.1" value="1" style="flex:1">
+        <span class="speed-val" id="v-speed">1.0×</span>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="section">
+      <div class="section-label">Legend</div>
+      <ul class="legend-list">
+        <li class="legend-item">
+          <div class="legend-line" style="background:#d4884a"></div>
+          <span>Arm links (L1=300, L2=240, L3=120 mm)</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-dot" style="background:#f0a060;border-radius:50%"></div>
+          <span>Joints (J1 shoulder, J2 elbow, J3 wrist)</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-dot" style="background:#e05050"></div>
+          <span>TCP / End-effector (gripper)</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-line" style="background:#e07830;opacity:0.7;border-top:1px dashed #e07830"></div>
+          <span>TCP trajectory trail</span>
+        </li>
+        <li class="legend-item">
+          <div class="legend-line" style="background:#e05050;width:12px;height:12px;background:none;border:1px dashed #3a5a8a;border-radius:50%"></div>
+          <span>Max workspace boundary</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:20px;height:12px;display:flex;align-items:center;gap:2px;flex-shrink:0">
+            <div style="width:8px;height:2px;background:#e05050"></div>
+            <div style="width:8px;height:2px;background:#40a060"></div>
+          </div>
+          <span>Joint frames (X=red, Y=green)</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:20px;height:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <div style="width:10px;height:1px;background:#60c080;position:relative">
+              <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1px;height:10px;background:#60c080"></div>
+            </div>
+          </div>
+          <span>IK target — reachable</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:20px;height:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <div style="width:10px;height:1px;background:#e0b040;position:relative">
+              <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1px;height:10px;background:#e0b040"></div>
+            </div>
+          </div>
+          <span>IK target — near singularity</span>
+        </li>
+        <li class="legend-item">
+          <div style="width:20px;height:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+            <div style="width:10px;height:1px;background:#e05050;position:relative">
+              <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:1px;height:10px;background:#e05050"></div>
+            </div>
+          </div>
+          <span>IK target — outside workspace</span>
+        </li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+// ── Constants ────────────────────────────────────────────────────────
+const L1 = 300, L2 = 240, L3 = 120;
+const MAX_REACH = L1 + L2 + L3; // 660mm
+
+const KEYFRAMES = [
+  [60,  -100,  20],
+  [90,   -60, -30],
+  [120, -120,  60],
+  [30,   -80, -50],
+  [0,    -90,   0],
+  [-30,  -60,  40],
+  [-60, -100, -20],
+  [45,   -90,  30],
+];
+const POSE_DURATION = 2200; // ms per pose (at 1x speed)
+const TRACE_MAX = 420;
+
+// ── State ────────────────────────────────────────────────────────────
+let angles = [0, 0, 0]; // degrees
+let targetAngles = [0, 0, 0];
+let autoDemo = true;
+let speed = 1.0;
+let demoT = 0;
+let lastTS = null;
+let trace = [];
+let scale = 1;
+let ox = 0, oy = 0;
+
+// IK state
+let ikMode = false;
+let target = null;        // {x, y} world mm — locked target
+let hoverTarget = null;   // {x, y} world mm — mouse hover preview
+let elbowUp = true;
+let desiredAngle = -90;   // desired EE orientation in degrees
+let ikStatus = 'idle';    // 'idle' | 'reachable' | 'unreachable' | 'singularity'
+let isDragging = false;
+
+// ── DOM refs ─────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const s1 = document.getElementById('s1');
+const s2 = document.getElementById('s2');
+const s3 = document.getElementById('s3');
+const v1 = document.getElementById('v1');
+const v2 = document.getElementById('v2');
+const v3 = document.getElementById('v3');
+const eeX = document.getElementById('ee-x');
+const eeY = document.getElementById('ee-y');
+const eeA = document.getElementById('ee-a');
+const eeR = document.getElementById('ee-r');
+const j2x = document.getElementById('j2-x');
+const j2y = document.getElementById('j2-y');
+const j3x = document.getElementById('j3-x');
+const j3y = document.getElementById('j3-y');
+const btnDemo = document.getElementById('btn-demo');
+const sSpeed = document.getElementById('s-speed');
+const vSpeed = document.getElementById('v-speed');
+
+// ── Forward Kinematics ───────────────────────────────────────────────
+function fk(a1deg, a2deg, a3deg) {
+  const a1 = a1deg * Math.PI / 180;
+  const cumA2 = a1 + a2deg * Math.PI / 180;
+  const cumA3 = cumA2 + a3deg * Math.PI / 180;
+
+  const j0 = { x: 0, y: 0 };
+  const j1 = { x: L1 * Math.cos(a1), y: L1 * Math.sin(a1) };
+  const j2 = { x: j1.x + L2 * Math.cos(cumA2), y: j1.y + L2 * Math.sin(cumA2) };
+  const ee = { x: j2.x + L3 * Math.cos(cumA3), y: j2.y + L3 * Math.sin(cumA3) };
+
+  return { j0, j1, j2, ee, a1, cumA2, cumA3 };
+}
+
+// ── Inverse Kinematics ───────────────────────────────────────────────
+// Returns {a1, a2, a3, c2} in degrees, or null if unreachable.
+function ikSolve(tx, ty, phiDeg, elbowUpSol) {
+  const phi = phiDeg * Math.PI / 180;
+
+  // Wrist center: work backwards from EE by L3
+  const wx = tx - L3 * Math.cos(phi);
+  const wy = ty - L3 * Math.sin(phi);
+
+  const dist2 = wx * wx + wy * wy;
+  const c2 = (dist2 - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+
+  if (Math.abs(c2) > 1) return null;
+
+  const s2 = elbowUpSol ? Math.sqrt(1 - c2 * c2) : -Math.sqrt(1 - c2 * c2);
+  const thetaElbow = Math.atan2(s2, c2);
+  const thetaShoulder = Math.atan2(wy, wx) - Math.atan2(L2 * s2, L1 + L2 * c2);
+  const thetaWrist = phi - thetaShoulder - thetaElbow;
+
+  const a1 = thetaShoulder * 180 / Math.PI;
+  const a2 = thetaElbow * 180 / Math.PI;
+  const a3 = thetaWrist * 180 / Math.PI;
+
+  return { a1, a2, a3, c2 };
+}
+
+// ── Smooth angle interpolation ───────────────────────────────────────
+function lerpAngle(a, b, t) {
+  const d = ((b - a + 540) % 360) - 180;
+  return a + d * t;
+}
+
+// ── Canvas coordinate helpers ────────────────────────────────────────
+function wx(x) { return ox + x * scale; }
+function wy(y) { return oy - y * scale; }
+
+function canvasToWorld(ex, ey) {
+  const rect = canvas.getBoundingClientRect();
+  const px = ex - rect.left;
+  const py = ey - rect.top;
+  return { x: (px - ox) / scale, y: -(py - oy) / scale };
+}
+
+// ── Update UI readouts ────────────────────────────────────────────────
+function updateUI(pose) {
+  v1.textContent = fmt1(angles[0]) + '°';
+  v2.textContent = fmt1(angles[1]) + '°';
+  v3.textContent = fmt1(angles[2]) + '°';
+
+  const { j2, ee, cumA3 } = pose;
+  const reach = Math.sqrt(ee.x * ee.x + ee.y * ee.y);
+  const totalDeg = cumA3 * 180 / Math.PI;
+
+  eeX.textContent = fmt1(ee.x);
+  eeY.textContent = fmt1(ee.y);
+  eeA.textContent = fmt1(normalizeAngle(totalDeg)) + '°';
+  eeR.textContent = fmt1(reach);
+
+  j2x.textContent = fmt1(j2.x);
+  j2y.textContent = fmt1(j2.y);
+  j3x.textContent = fmt1(ee.x);
+  j3y.textContent = fmt1(ee.y);
+
+  updateIKStatus();
+}
+
+function updateIKStatus() {
+  const dot = document.getElementById('ik-dot');
+  const text = document.getElementById('ik-status-text');
+  const txEl = document.getElementById('tgt-x');
+  const tyEl = document.getElementById('tgt-y');
+
+  if (!ikMode || !target) {
+    dot.style.background = 'var(--text-mute)';
+    text.textContent = 'Click canvas to set target';
+    txEl.textContent = '—';
+    tyEl.textContent = '—';
+    return;
+  }
+
+  txEl.textContent = fmt1(target.x);
+  tyEl.textContent = fmt1(target.y);
+
+  if (ikStatus === 'reachable') {
+    dot.style.background = 'var(--ok)';
+    text.textContent = 'Reachable';
+  } else if (ikStatus === 'singularity') {
+    dot.style.background = 'var(--warn)';
+    text.textContent = 'Near singularity';
+  } else if (ikStatus === 'unreachable') {
+    dot.style.background = 'var(--tcp)';
+    text.textContent = 'Outside workspace';
+  }
+}
+
+function fmt1(v) {
+  return (Math.round(v * 10) / 10).toFixed(1);
+}
+
+function normalizeAngle(deg) {
+  let d = deg % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}
+
+function syncSliders() {
+  s1.value = angles[0];
+  s2.value = angles[1];
+  s3.value = angles[2];
+}
+
+// ── Drawing ──────────────────────────────────────────────────────────
+function resize() {
+  const wrap = canvas.parentElement;
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  canvas.width = W * devicePixelRatio;
+  canvas.height = H * devicePixelRatio;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+
+  scale = Math.min(W, H) / (MAX_REACH * 2.6);
+  ox = W * 0.45;
+  oy = H * 0.55;
+  trace = [];
+}
+
+function drawGrid() {
+  const W = canvas.width / devicePixelRatio;
+  const H = canvas.height / devicePixelRatio;
+  const GRID = 100; // mm
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 1;
+
+  const xStart = Math.ceil((-ox / scale) / GRID) * GRID;
+  const xEnd   = Math.floor(((W - ox) / scale) / GRID) * GRID;
+  for (let x = xStart; x <= xEnd; x += GRID) {
+    ctx.beginPath();
+    ctx.moveTo(wx(x), 0);
+    ctx.lineTo(wx(x), H);
+    ctx.stroke();
+  }
+
+  const yStart = Math.ceil(((oy - H) / scale) / GRID) * GRID;
+  const yEnd   = Math.floor((oy / scale) / GRID) * GRID;
+  for (let y = yStart; y <= yEnd; y += GRID) {
+    ctx.beginPath();
+    ctx.moveTo(0, wy(y));
+    ctx.lineTo(W, wy(y));
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, wy(0)); ctx.lineTo(W, wy(0));
+  ctx.moveTo(wx(0), 0); ctx.lineTo(wx(0), H);
+  ctx.stroke();
+}
+
+function drawWorkspace() {
+  const r = MAX_REACH * scale;
+  ctx.beginPath();
+  ctx.arc(wx(0), wy(0), r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(60,100,160,0.06)';
+  ctx.fill();
+  ctx.setLineDash([6, 5]);
+  ctx.strokeStyle = 'rgba(80,130,200,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawTrace() {
+  if (trace.length < 2) return;
+  for (let i = 1; i < trace.length; i++) {
+    const a = trace[i - 1];
+    const b = trace[i];
+    const alpha = b.age * 0.75 + 0.05;
+    ctx.beginPath();
+    ctx.moveTo(wx(a.x), wy(a.y));
+    ctx.lineTo(wx(b.x), wy(b.y));
+    ctx.strokeStyle = `rgba(220,130,60,${alpha.toFixed(3)})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+function drawTarget(pos, isHover) {
+  const cx = wx(pos.x), cy = wy(pos.y);
+
+  let color;
+  if (isHover) {
+    color = 'rgba(180,180,255,0.5)';
+  } else if (ikStatus === 'reachable') {
+    color = '#60c080';
+  } else if (ikStatus === 'singularity') {
+    color = '#e0b040';
+  } else {
+    color = '#e05050';
+  }
+
+  const size = 12;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = isHover ? 1 : 1.5;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - size, cy); ctx.lineTo(cx + size, cy);
+  ctx.moveTo(cx, cy - size); ctx.lineTo(cx, cy + size);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.stroke();
+
+  if (!isHover && ikStatus !== 'idle') {
+    const label = ikStatus === 'unreachable' ? 'UNREACHABLE' :
+                  ikStatus === 'singularity' ? 'SINGULARITY' : '';
+    if (label) {
+      ctx.fillStyle = color;
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(label, cx + 10, cy - 4);
+    }
+  }
+}
+
+function drawAngleArc(cx, cy, startAngle, deltaAngle, r, label) {
+  if (Math.abs(deltaAngle) < 0.01) return;
+  const sx = wx(cx), sy = wy(cy);
+  const rPx = r * scale;
+
+  ctx.beginPath();
+  const a0 = -startAngle;
+  const a1 = -(startAngle + deltaAngle);
+  if (deltaAngle > 0) {
+    ctx.arc(sx, sy, rPx, a0, a1, false);
+  } else {
+    ctx.arc(sx, sy, rPx, a0, a1, true);
+  }
+  ctx.strokeStyle = 'rgba(240,200,100,0.55)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  const midA = startAngle + deltaAngle / 2;
+  const lx = sx + (rPx + 8) * Math.cos(-midA);
+  const ly = sy + (rPx + 8) * Math.sin(-midA);
+  ctx.fillStyle = 'rgba(240,200,100,0.8)';
+  ctx.font = `bold ${Math.max(9, scale * 12)}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim()}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, lx, ly);
+}
+
+function drawFrame(px, py, angle, len) {
+  const pxc = wx(px), pyc = wy(py);
+  const lenPx = len * scale;
+
+  ctx.beginPath();
+  ctx.moveTo(pxc, pyc);
+  ctx.lineTo(pxc + lenPx * Math.cos(-angle), pyc + lenPx * Math.sin(-angle));
+  ctx.strokeStyle = '#d04040';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  arrowHead(pxc + lenPx * Math.cos(-angle), pyc + lenPx * Math.sin(-angle), -angle, 5, '#d04040');
+
+  const ya = -angle - Math.PI / 2;
+  ctx.beginPath();
+  ctx.moveTo(pxc, pyc);
+  ctx.lineTo(pxc + lenPx * Math.cos(ya), pyc + lenPx * Math.sin(ya));
+  ctx.strokeStyle = '#40a060';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  arrowHead(pxc + lenPx * Math.cos(ya), pyc + lenPx * Math.sin(ya), ya, 5, '#40a060');
+}
+
+function arrowHead(x, y, angle, size, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size * 0.5);
+  ctx.lineTo(-size,  size * 0.5);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawLink(x1, y1, x2, y2, widthMm, color) {
+  const cx1 = wx(x1), cy1 = wy(y1);
+  const cx2 = wx(x2), cy2 = wy(y2);
+  const angle = Math.atan2(cy2 - cy1, cx2 - cx1);
+  const w1 = widthMm * scale;
+  const w2 = w1 * 0.55;
+  const dx1 = Math.sin(angle) * w1;
+  const dy1 = -Math.cos(angle) * w1;
+  const dx2 = Math.sin(angle) * w2;
+  const dy2 = -Math.cos(angle) * w2;
+
+  ctx.beginPath();
+  ctx.moveTo(cx1 + dx1, cy1 + dy1);
+  ctx.lineTo(cx2 + dx2, cy2 + dy2);
+  ctx.lineTo(cx2 - dx2, cy2 - dy2);
+  ctx.lineTo(cx1 - dx1, cy1 - dy1);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = 'rgba(255,200,100,0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+function drawJoint(px, py, r, label) {
+  const cx = wx(px), cy = wy(py);
+  const rPx = r * scale;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, rPx, 0, Math.PI * 2);
+  ctx.fillStyle = '#2a2030';
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur = 10;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#f0a060';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, rPx * 0.45, 0, Math.PI * 2);
+  ctx.fillStyle = '#f0a060';
+  ctx.fill();
+
+  ctx.fillStyle = '#8888a0';
+  ctx.font = `bold ${Math.max(9, scale * 10)}px ${getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim()}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText(label, cx, cy + rPx + 4);
+}
+
+function drawBase(px, py) {
+  const cx = wx(px), cy = wy(py);
+  const w = 22, h = 14;
+
+  ctx.beginPath();
+  ctx.moveTo(cx - w, cy + h * 0.3);
+  ctx.lineTo(cx + w, cy + h * 0.3);
+  ctx.lineTo(cx + w * 0.6, cy + h);
+  ctx.lineTo(cx - w * 0.6, cy + h);
+  ctx.closePath();
+  ctx.fillStyle = '#333340';
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#444458';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    ctx.beginPath();
+    ctx.moveTo(cx + i * 8 - 4, cy + h * 0.35);
+    ctx.lineTo(cx + i * 8 + 4, cy + h * 0.95);
+    ctx.stroke();
+  }
+}
+
+function drawTCP(px, py, angle) {
+  const cx = wx(px), cy = wy(py);
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-angle);
+
+  const sw = 10 * scale, sh = 6 * scale;
+  const fw = 3 * scale, fh = 8 * scale, fg = 4 * scale;
+
+  ctx.fillStyle = '#e05050';
+  ctx.shadowColor = 'rgba(224,80,80,0.4)';
+  ctx.shadowBlur = 10;
+  ctx.fillRect(-sw / 2, -sh / 2, sw, sh);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#c03030';
+  ctx.fillRect(-fw / 2 - fg / 2, -sh / 2 - fh, fw, fh);
+  ctx.fillRect( fg / 2 - fw / 2, -sh / 2 - fh, fw, fh);
+
+  ctx.restore();
+}
+
+function drawRuler() {
+  const H = canvas.height / devicePixelRatio;
+  const margin = 20;
+  const barLen = 100 * scale;
+  const y = H - margin;
+  const x0 = margin;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x0, y - 4);
+  ctx.lineTo(x0, y + 4);
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x0 + barLen, y);
+  ctx.moveTo(x0 + barLen, y - 4);
+  ctx.lineTo(x0 + barLen, y + 4);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('100 mm', x0 + barLen / 2, y - 6);
+}
+
+function draw() {
+  const W = canvas.width / devicePixelRatio;
+  const H = canvas.height / devicePixelRatio;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#16161a';
+  ctx.fillRect(0, 0, W, H);
+
+  drawGrid();
+  drawWorkspace();
+  drawTrace();
+
+  // Draw target indicators before arm (so arm renders on top)
+  if (hoverTarget) drawTarget(hoverTarget, true);
+  if (ikMode && target) drawTarget(target, false);
+
+  const pose = fk(angles[0], angles[1], angles[2]);
+  const { j0, j1, j2, ee, a1, cumA2, cumA3 } = pose;
+
+  drawLink(j0.x, j0.y, j1.x, j1.y, 14, '#c07830');
+  drawLink(j1.x, j1.y, j2.x, j2.y, 10, '#c87030');
+  drawLink(j2.x, j2.y, ee.x, ee.y, 7, '#d06828');
+
+  const arcRad = 30;
+  drawAngleArc(j0.x, j0.y, 0, a1, arcRad, fmt1deg(angles[0]) + '°');
+  drawAngleArc(j1.x, j1.y, a1, cumA2 - a1, arcRad, fmt1deg(angles[1]) + '°');
+  drawAngleArc(j2.x, j2.y, cumA2, cumA3 - cumA2, arcRad, fmt1deg(angles[2]) + '°');
+
+  const frameLen = 42;
+  drawFrame(j0.x, j0.y, a1, frameLen);
+  drawFrame(j1.x, j1.y, cumA2, frameLen * 0.8);
+  drawFrame(j2.x, j2.y, cumA3, frameLen * 0.6);
+
+  drawBase(j0.x, j0.y);
+
+  drawJoint(j0.x, j0.y, 11, 'J1');
+  drawJoint(j1.x, j1.y,  9, 'J2');
+  drawJoint(j2.x, j2.y,  7, 'J3');
+
+  drawTCP(ee.x, ee.y, cumA3);
+
+  drawRuler();
+}
+
+function fmt1deg(v) {
+  return (Math.round(v * 10) / 10).toFixed(1);
+}
+
+// ── Demo animation ───────────────────────────────────────────────────
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function getDemoPose(t) {
+  const cycleDuration = POSE_DURATION / speed;
+  const n = KEYFRAMES.length;
+  const total = cycleDuration * n;
+  const tmod = ((t % total) + total) % total;
+  const idx = Math.floor(tmod / cycleDuration);
+  const frac = (tmod - idx * cycleDuration) / cycleDuration;
+  const eased = easeInOut(frac);
+
+  const from = KEYFRAMES[idx];
+  const to   = KEYFRAMES[(idx + 1) % n];
+
+  return [
+    from[0] + (to[0] - from[0]) * eased,
+    from[1] + (to[1] - from[1]) * eased,
+    from[2] + (to[2] - from[2]) * eased,
+  ];
+}
+
+// ── Trace management ─────────────────────────────────────────────────
+function pushTrace(pose) {
+  trace.push({ x: pose.ee.x, y: pose.ee.y, age: 1 });
+  if (trace.length > TRACE_MAX) trace.shift();
+  const n = trace.length;
+  for (let i = 0; i < n; i++) {
+    trace[i].age = i / n;
+  }
+}
+
+// ── IK mode helpers ───────────────────────────────────────────────────
+function enableIK() {
+  ikMode = true;
+  // Set targetAngles to current angles so there's no jump on first activation
+  targetAngles = [...angles];
+  document.getElementById('btn-ik').classList.add('active');
+  canvas.style.cursor = 'crosshair';
+  updateIKStatus();
+}
+
+function disableIK() {
+  ikMode = false;
+  target = null;
+  ikStatus = 'idle';
+  targetAngles = [...angles];
+  document.getElementById('btn-ik').classList.remove('active');
+  canvas.style.cursor = 'default';
+  updateIKStatus();
+}
+
+// ── Main loop ────────────────────────────────────────────────────────
+function animate(ts) {
+  requestAnimationFrame(animate);
+
+  const dt = lastTS === null ? 0 : Math.min(ts - lastTS, 100);
+  lastTS = ts;
+
+  if (autoDemo) {
+    demoT += dt;
+    const pose = getDemoPose(demoT);
+    angles[0] = pose[0];
+    angles[1] = pose[1];
+    angles[2] = pose[2];
+    syncSliders();
+  } else if (ikMode && target) {
+    const sol = ikSolve(target.x, target.y, desiredAngle, elbowUp);
+    if (sol) {
+      ikStatus = Math.abs(sol.c2) > 0.97 ? 'singularity' : 'reachable';
+      targetAngles = [sol.a1, sol.a2, sol.a3];
+    } else {
+      ikStatus = 'unreachable';
+    }
+
+    // Smooth interpolation toward targetAngles
+    const s = 1 - Math.pow(0.001, dt / 1000 * 8);
+    for (let i = 0; i < 3; i++) {
+      angles[i] = lerpAngle(angles[i], targetAngles[i], s);
+    }
+    syncSliders();
+  }
+
+  const fkResult = fk(angles[0], angles[1], angles[2]);
+  pushTrace(fkResult);
+  draw();
+  updateUI(fkResult);
+}
+
+// ── Canvas interaction ────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  if (!ikMode) enableIK();
+  const w = canvasToWorld(e.clientX, e.clientY);
+  target = w;
+  isDragging = true;
+  stopDemo();
+});
+
+canvas.addEventListener('mousemove', e => {
+  const w = canvasToWorld(e.clientX, e.clientY);
+  hoverTarget = w;
+  if (isDragging) target = w;
+});
+
+canvas.addEventListener('mouseup', () => {
+  isDragging = false;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hoverTarget = null;
+  isDragging = false;
+});
+
+// ── Event listeners ──────────────────────────────────────────────────
+s1.addEventListener('input', () => {
+  if (autoDemo) stopDemo();
+  if (ikMode) disableIK();
+  angles[0] = parseFloat(s1.value);
+  targetAngles[0] = angles[0];
+  trace = [];
+});
+
+s2.addEventListener('input', () => {
+  if (autoDemo) stopDemo();
+  if (ikMode) disableIK();
+  angles[1] = parseFloat(s2.value);
+  targetAngles[1] = angles[1];
+  trace = [];
+});
+
+s3.addEventListener('input', () => {
+  if (autoDemo) stopDemo();
+  if (ikMode) disableIK();
+  angles[2] = parseFloat(s3.value);
+  targetAngles[2] = angles[2];
+  trace = [];
+});
+
+sSpeed.addEventListener('input', () => {
+  speed = parseFloat(sSpeed.value);
+  vSpeed.textContent = speed.toFixed(1) + '×';
+});
+
+btnDemo.addEventListener('click', () => {
+  autoDemo = !autoDemo;
+  btnDemo.classList.toggle('active', autoDemo);
+  btnDemo.setAttribute('aria-pressed', autoDemo);
+  if (autoDemo) {
+    lastTS = null;
+    if (ikMode) disableIK();
+  }
+});
+
+document.getElementById('btn-reset').addEventListener('click', () => {
+  stopDemo();
+  if (ikMode) disableIK();
+  angles = [0, 0, 0];
+  targetAngles = [0, 0, 0];
+  syncSliders();
+  trace = [];
+  demoT = 0;
+});
+
+document.getElementById('btn-ik').addEventListener('click', () => {
+  if (ikMode) {
+    disableIK();
+  } else {
+    if (autoDemo) stopDemo();
+    enableIK();
+  }
+});
+
+document.getElementById('btn-clear-target').addEventListener('click', () => {
+  target = null;
+  ikStatus = 'idle';
+  updateIKStatus();
+});
+
+document.getElementById('s-ee-angle').addEventListener('input', e => {
+  desiredAngle = +e.target.value;
+  document.getElementById('v-ee-angle').textContent = e.target.value + '°';
+});
+
+document.getElementById('btn-elbow-up').addEventListener('click', () => {
+  elbowUp = true;
+  document.getElementById('btn-elbow-up').classList.add('active');
+  document.getElementById('btn-elbow-down').classList.remove('active');
+});
+
+document.getElementById('btn-elbow-down').addEventListener('click', () => {
+  elbowUp = false;
+  document.getElementById('btn-elbow-down').classList.add('active');
+  document.getElementById('btn-elbow-up').classList.remove('active');
+});
+
+function stopDemo() {
+  autoDemo = false;
+  btnDemo.classList.remove('active');
+  btnDemo.setAttribute('aria-pressed', 'false');
+}
+
+window.addEventListener('resize', resize);
+
+// ── Init ─────────────────────────────────────────────────────────────
+resize();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
