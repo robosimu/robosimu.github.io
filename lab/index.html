@@ -532,15 +532,17 @@ input[type=range]:focus-visible {
     <!-- Gemini API Key -->
     <div class="section">
       <div class="section-label">GEMINI API KEY</div>
-      <input
-        type="password"
-        id="api-key-input"
-        class="api-input"
-        placeholder="AIza..."
-        autocomplete="off"
-        spellcheck="false"
-        aria-label="Gemini API key"
-      >
+      <form onsubmit="return false">
+        <input
+          type="password"
+          id="api-key-input"
+          class="api-input"
+          placeholder="AIza..."
+          autocomplete="new-password"
+          spellcheck="false"
+          aria-label="Gemini API key"
+        >
+      </form>
       <p class="api-note">Key stays in browser. Never sent anywhere except Google.</p>
     </div>
 
@@ -684,8 +686,8 @@ function setPhase(phase, sub = '') {
 
 // ── MuJoCo WASM loader ────────────────────────────────────────────────
 async function loadMuJoCo() {
-  const WASM_CDN = 'https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.wasm';
-  const JS_CDN   = 'https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.js';
+  const WASM_CDN = 'https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.wasm';
+  const JS_CDN   = 'https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.js';
 
   const wasmRes = await fetch(WASM_CDN);
   if (!wasmRes.ok) throw new Error('Failed to fetch MuJoCo WASM from CDN');
@@ -1342,8 +1344,8 @@ btnCheck.addEventListener('click', async () => {
   wasmEl.textContent = '...';
   wasmEl.className   = 'file-status unknown';
 
-  const jsRes   = await fetch('https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.js',   { method: 'HEAD' }).catch(() => ({ ok: false }));
-  const wasmRes = await fetch('https://unpkg.com/mujoco-wasm/dist/mujoco_wasm.wasm', { method: 'HEAD' }).catch(() => ({ ok: false }));
+  const jsRes   = await fetch('https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.js',   { method: 'HEAD' }).catch(() => ({ ok: false }));
+  const wasmRes = await fetch('https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.wasm', { method: 'HEAD' }).catch(() => ({ ok: false }));
 
   jsEl.textContent   = jsRes.ok   ? 'OK' : 'MISSING';
   jsEl.className     = 'file-status ' + (jsRes.ok   ? 'ok' : 'missing');
