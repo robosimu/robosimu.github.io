@@ -846,46 +846,53 @@ function buildPatchedXML(originalXML) {
 
 async function loadRobotModel(mujoco) {
   try { mujoco.FS.mkdir('/working'); } catch (_) {}
+  try { mujoco.FS.mkdir('/working/assets'); } catch (_) {}
+
+  const binaryExts = new Set(['stl', 'png', 'jpg', 'jpeg', 'obj']);
+
+  async function fetchAndWrite(url, vfsPath) {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const ext = vfsPath.split('.').pop().toLowerCase();
+    if (binaryExts.has(ext)) {
+      mujoco.FS.writeFile(vfsPath, new Uint8Array(await res.arrayBuffer()));
+    } else {
+      mujoco.FS.writeFile(vfsPath, await res.text());
+    }
+  }
 
   // Fetch scene.xml
   const sceneRes = await fetch(MENAGERIE_BASE + 'scene.xml');
   if (!sceneRes.ok) throw new Error('Failed to fetch scene.xml from Menagerie');
   const sceneText = await sceneRes.text();
 
-  // Collect all file= references
-  const fileMatches = [...sceneText.matchAll(/file="([^"]+)"/g)].map(m => m[1]);
-  // Also match include file refs
-  const includeMatches = [...sceneText.matchAll(/file="([^"]+\.xml)"/g)].map(m => m[1]);
-  const allFiles = [...new Set([...fileMatches, ...includeMatches])];
+  // Process XML includes (e.g. panda.xml)
+  const includeFiles = [...sceneText.matchAll(/file="([^"]+\.xml)"/g)].map(m => m[1]);
+  for (const xmlFile of includeFiles) {
+    const xmlUrl = MENAGERIE_BASE + xmlFile;
+    const xmlRes = await fetch(xmlUrl);
+    if (!xmlRes.ok) continue;
+    const xmlText = await xmlRes.text();
+    mujoco.FS.writeFile('/working/' + xmlFile, xmlText);
 
-  // Fetch all assets
-  const binaryExts = ['stl', 'STL', 'png', 'PNG', 'jpg', 'JPG', 'obj', 'OBJ'];
-  for (const filepath of allFiles) {
-    const filename = filepath.split('/').pop();
-    const url = MENAGERIE_BASE + (filepath.startsWith('./') ? filepath.slice(2) : filepath);
-    try {
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const ext = filename.split('.').pop().toLowerCase();
-      if (binaryExts.includes(ext) || binaryExts.map(e => e.toLowerCase()).includes(ext)) {
-        mujoco.FS.writeFile('/working/' + filename, new Uint8Array(await res.arrayBuffer()));
-      } else {
-        // Text file (xml)
-        const subText = await res.text();
-        mujoco.FS.writeFile('/working/' + filename, subText);
-        // Recursively find and fetch assets in sub-xmls
-        const subFiles = [...subText.matchAll(/file="([^"]+)"/g)].map(m => m[1]);
-        for (const sf of subFiles) {
-          const sfname = sf.split('/').pop();
-          const sfurl = MENAGERIE_BASE + (sf.startsWith('./') ? sf.slice(2) : sf);
-          try {
-            const sfres = await fetch(sfurl);
-            if (!sfres.ok) continue;
-            mujoco.FS.writeFile('/working/' + sfname, new Uint8Array(await sfres.arrayBuffer()));
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
+    // Extract meshdir from <compiler meshdir="..."> — defaults to empty string
+    const meshdirMatch = xmlText.match(/meshdir="([^"]+)"/);
+    const meshdir = meshdirMatch ? meshdirMatch[1] : '';
+
+    // Fetch all mesh/texture assets referenced in this XML
+    const assetFiles = [...xmlText.matchAll(/file="([^"]+)"/g)].map(m => m[1])
+      .filter(f => !f.endsWith('.xml'));
+
+    for (const assetFile of assetFiles) {
+      // Asset file paths in XML are relative to the XML (no meshdir prefix in them),
+      // but MuJoCo resolves them through meshdir at runtime.
+      // Actual location on server: MENAGERIE_BASE/meshdir/assetFile
+      const serverPath = meshdir ? `${meshdir}/${assetFile}` : assetFile;
+      const assetUrl = MENAGERIE_BASE + serverPath;
+      // VFS path: /working/meshdir/assetFile (mirrors the on-disk structure)
+      const vfsPath = meshdir ? `/working/${meshdir}/${assetFile}` : `/working/${assetFile}`;
+      try { await fetchAndWrite(assetUrl, vfsPath); } catch (_) {}
+    }
   }
 
   // Patch scene XML and write to VFS
