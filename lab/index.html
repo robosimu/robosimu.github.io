@@ -305,6 +305,13 @@ button:disabled {
 }
 
 /* ── API Key input ───────────────────────────────── */
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
 .api-input {
   width: 100%;
   font-family: var(--font-mono);
@@ -517,14 +524,10 @@ input[type=range]:focus-visible {
     <!-- Setup -->
     <div class="section">
       <div class="section-label">WASM Files</div>
-      <p class="setup-note">Files are loaded automatically from unpkg CDN. Click below to verify connectivity.</p>
-      <div class="file-check-row">
+      <p class="setup-note">Single JS bundle (~10 MB) loaded from jsDelivr CDN. Click below to verify connectivity.</p>
+      <div class="file-check-row" style="margin-bottom:12px">
         <span class="file-name">mujoco_wasm.js</span>
         <span class="file-status unknown" id="status-js">—</span>
-      </div>
-      <div class="file-check-row" style="margin-bottom:12px">
-        <span class="file-name">mujoco_wasm.wasm</span>
-        <span class="file-status unknown" id="status-wasm">—</span>
       </div>
       <button id="btn-check" style="width:100%">Check Files</button>
     </div>
@@ -533,6 +536,7 @@ input[type=range]:focus-visible {
     <div class="section">
       <div class="section-label">GEMINI API KEY</div>
       <form onsubmit="return false">
+        <input type="text" autocomplete="username" class="visually-hidden" aria-hidden="true" tabindex="-1">
         <input
           type="password"
           id="api-key-input"
@@ -685,18 +689,12 @@ function setPhase(phase, sub = '') {
 }
 
 // ── MuJoCo WASM loader ────────────────────────────────────────────────
+// mujoco-js embeds the WASM binary inside the JS bundle (10.5MB single file)
+const MUJOCO_JS_CDN = 'https://cdn.jsdelivr.net/npm/mujoco-js@0.0.7/dist/mujoco_wasm.js';
+
 async function loadMuJoCo() {
-  const WASM_CDN = 'https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.wasm';
-  const JS_CDN   = 'https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.js';
-
-  const wasmRes = await fetch(WASM_CDN);
-  if (!wasmRes.ok) throw new Error('Failed to fetch MuJoCo WASM from CDN');
-
-  const jsRes = await fetch(JS_CDN);
-  if (!jsRes.ok) throw new Error('Failed to fetch MuJoCo JS from CDN');
-
-  const wasmBlob = new Blob([await wasmRes.arrayBuffer()], { type: 'application/wasm' });
-  const wasmUrl = URL.createObjectURL(wasmBlob);
+  const jsRes = await fetch(MUJOCO_JS_CDN);
+  if (!jsRes.ok) throw new Error('Failed to fetch MuJoCo from CDN (status ' + jsRes.status + ')');
 
   const jsBlob = new Blob([await jsRes.arrayBuffer()], { type: 'application/javascript' });
   const jsUrl = URL.createObjectURL(jsBlob);
@@ -704,9 +702,7 @@ async function loadMuJoCo() {
   const module = await import(/* @vite-ignore */ jsUrl);
   const loadMujoco = module.default;
 
-  return await loadMujoco({
-    locateFile: (path) => path.endsWith('.wasm') ? wasmUrl : path
-  });
+  return await loadMujoco();
 }
 
 // ── Scene constants ───────────────────────────────────────────────────
@@ -1337,20 +1333,13 @@ x increases to the right, y increases upward.`;
 
 // ── Controls ──────────────────────────────────────────────────────────
 btnCheck.addEventListener('click', async () => {
-  const jsEl   = document.getElementById('status-js');
-  const wasmEl = document.getElementById('status-wasm');
-  jsEl.textContent   = '...';
-  jsEl.className     = 'file-status unknown';
-  wasmEl.textContent = '...';
-  wasmEl.className   = 'file-status unknown';
+  const jsEl = document.getElementById('status-js');
+  jsEl.textContent = '...';
+  jsEl.className   = 'file-status unknown';
 
-  const jsRes   = await fetch('https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.js',   { method: 'HEAD' }).catch(() => ({ ok: false }));
-  const wasmRes = await fetch('https://cdn.jsdelivr.net/npm/mujoco-wasm/dist/mujoco_wasm.wasm', { method: 'HEAD' }).catch(() => ({ ok: false }));
-
-  jsEl.textContent   = jsRes.ok   ? 'OK' : 'MISSING';
-  jsEl.className     = 'file-status ' + (jsRes.ok   ? 'ok' : 'missing');
-  wasmEl.textContent = wasmRes.ok ? 'OK' : 'MISSING';
-  wasmEl.className   = 'file-status ' + (wasmRes.ok ? 'ok' : 'missing');
+  const jsRes = await fetch('https://cdn.jsdelivr.net/npm/mujoco-js@0.0.7/dist/mujoco_wasm.js', { method: 'HEAD' }).catch(() => ({ ok: false }));
+  jsEl.textContent = jsRes.ok ? 'OK' : 'MISSING';
+  jsEl.className   = 'file-status ' + (jsRes.ok ? 'ok' : 'missing');
 });
 
 btnScan.addEventListener('click', async () => {
