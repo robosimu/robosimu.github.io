@@ -1024,7 +1024,7 @@ function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 80, tol = 5e-
       for (let i = 0; i < 3; i++) dq += jacp[i * nv + j] * err[i];
       data.qpos[j] += step * dq;
     }
-    mujoco.mj_normalizeQuat(model, data);
+    mujoco.mj_normalizeQuat(model, data.qpos);
   }
 }
 
