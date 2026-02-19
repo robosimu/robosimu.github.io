@@ -742,10 +742,12 @@ controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.update();
 
-// Top-down camera for Gemini scan
+// Top-down camera for Gemini scan — positioned in Three.js Y-up space
+// Cubes are at MuJoCo Z=0.44 → Three.js Y=0.44 after mujocoRoot rotation
 const topDownCamera = new THREE.OrthographicCamera(-0.6, 0.6, 0.4, -0.4, 0.01, 10);
-topDownCamera.position.set(0, 2.0, 0.001);
-topDownCamera.lookAt(0, 0, 0.44);
+topDownCamera.position.set(0, 2.5, 0);
+topDownCamera.up.set(0, 0, -1); // MuJoCo +Y (forward) as image-up
+topDownCamera.lookAt(0, 0.44, 0);
 
 // Lighting
 const ambient = new THREE.AmbientLight(0x404040, 0.6);
@@ -771,13 +773,19 @@ ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 scene.add(ground);
 
-// Target marker (shown during pick sequence)
+// MuJoCo scene root: rotate -90° around X to convert Z-up (MuJoCo) → Y-up (Three.js)
+// All body groups and dynamic objects live here so positions stay in MuJoCo coordinates
+const mujocoRoot = new THREE.Group();
+mujocoRoot.rotation.x = -Math.PI / 2;
+scene.add(mujocoRoot);
+
+// Target marker lives inside mujocoRoot so position.set uses MuJoCo Z-up coords directly
 const targetMarker = new THREE.Mesh(
   new THREE.SphereGeometry(0.015, 8, 8),
   new THREE.MeshStandardMaterial({ color: 0x60c080, emissive: 0x206040 })
 );
 targetMarker.visible = false;
-scene.add(targetMarker);
+mujocoRoot.add(targetMarker);
 
 // Resize handler
 function onResize() {
@@ -907,91 +915,86 @@ async function loadRobotModel(mujoco) {
 // ── Body geometry sync ────────────────────────────────────────────────
 function buildBodyGroups(mujoco, model) {
   const groups = [];
-  const ngeom = model.ngeom;
 
   // Materials
-  const linkMat   = new THREE.MeshStandardMaterial({ color: 0xd4884a, metalness: 0.3, roughness: 0.5 });
-  const cubeMat   = new THREE.MeshStandardMaterial({ color: 0xcc2525, roughness: 0.6 });
-  const trayMat   = new THREE.MeshStandardMaterial({ color: 0x4a4a66, roughness: 0.8 });
-  const groundMat2 = new THREE.MeshStandardMaterial({ color: 0x252530 });
+  const linkMat = new THREE.MeshStandardMaterial({ color: 0xd0d0dc, metalness: 0.5, roughness: 0.3 });
+  const cubeMat = new THREE.MeshStandardMaterial({ color: 0xcc2525, roughness: 0.6 });
+  const trayMat = new THREE.MeshStandardMaterial({ color: 0x4a4a66, roughness: 0.8 });
 
   for (let b = 0; b < model.nbody; b++) {
     const g = new THREE.Group();
-    scene.add(g);
+    mujocoRoot.add(g); // lives inside mujocoRoot (MuJoCo Z-up coords)
     groups.push(g);
   }
 
-  // For each geom, attach a mesh to its body group
-  // We use box geoms for cubes/tray and capsule-like shapes for robot links
-  const geomType = {
-    PLANE: 0, HFIELD: 1, SPHERE: 2, CAPSULE: 3,
-    ELLIPSOID: 4, CYLINDER: 5, BOX: 6, MESH: 7
-  };
+  const GEOM = { PLANE: 0, HFIELD: 1, SPHERE: 2, CAPSULE: 3, ELLIPSOID: 4, CYLINDER: 5, BOX: 6, MESH: 7 };
 
-  for (let gi = 0; gi < ngeom; gi++) {
+  for (let gi = 0; gi < model.ngeom; gi++) {
+    // Skip collision-only geoms (group 2 in Menagerie models)
+    if (model.geom_group[gi] === 2) continue;
+
     const bodyId = model.geom_bodyid[gi];
-    const type = model.geom_type[gi];
-    const size = model.geom_size.subarray(gi * 3, gi * 3 + 3);
-    const pos = model.geom_pos.subarray(gi * 3, gi * 3 + 3);
-    const quat = model.geom_quat.subarray(gi * 4, gi * 4 + 4);
-    const rgba = model.geom_rgba.subarray(gi * 4, gi * 4 + 4);
+    const type   = model.geom_type[gi];
+    const size   = model.geom_size.subarray(gi * 3, gi * 3 + 3);
+    const gpos   = model.geom_pos.subarray(gi * 3, gi * 3 + 3);
+    const gquat  = model.geom_quat.subarray(gi * 4, gi * 4 + 4);
+    const rgba   = model.geom_rgba.subarray(gi * 4, gi * 4 + 4);
 
     let geo = null;
     let mat = null;
 
-    // Determine color from rgba
     const r = rgba[0], g2 = rgba[1], b2 = rgba[2];
-    // Red cubes
-    if (r > 0.6 && g2 < 0.3 && b2 < 0.3) {
-      mat = cubeMat;
-    }
-    // Tray (blueish-gray)
-    else if (b2 > 0.3 && r < 0.4 && g2 < 0.4) {
-      mat = trayMat;
-    }
-    else {
-      // Robot link color based on rgba alpha (robot has alpha=1, gray tones)
-      const col = new THREE.Color(r, g2, b2);
-      mat = new THREE.MeshStandardMaterial({ color: col, metalness: 0.25, roughness: 0.55 });
-    }
+    if      (r > 0.6 && g2 < 0.3 && b2 < 0.3) mat = cubeMat;
+    else if (b2 > 0.3 && r < 0.4 && g2 < 0.4) mat = trayMat;
+    else mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g2, b2), metalness: 0.25, roughness: 0.55 });
 
-    if (type === geomType.BOX) {
+    if (type === GEOM.MESH) {
+      const meshId = model.geom_dataid[gi];
+      if (meshId >= 0) {
+        const va = model.mesh_vertadr[meshId];
+        const vn = model.mesh_vertnum[meshId];
+        const fa = model.mesh_faceadr[meshId];
+        const fn = model.mesh_facenum[meshId];
+        // Copy vertex/face data out of WASM heap into fresh typed arrays
+        const verts = new Float32Array(model.mesh_vert.subarray(va * 3, (va + vn) * 3));
+        const faces = new Int32Array(model.mesh_face.subarray(fa * 3, (fa + fn) * 3));
+        geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        geo.setIndex(new THREE.BufferAttribute(faces, 1));
+        geo.computeVertexNormals();
+        mat = linkMat;
+      } else {
+        continue;
+      }
+    } else if (type === GEOM.BOX) {
       geo = new THREE.BoxGeometry(size[0] * 2, size[1] * 2, size[2] * 2);
-    } else if (type === geomType.SPHERE) {
-      geo = new THREE.SphereGeometry(size[0], 12, 8);
-    } else if (type === geomType.CAPSULE) {
+    } else if (type === GEOM.SPHERE) {
+      geo = new THREE.SphereGeometry(size[0], 16, 12);
+    } else if (type === GEOM.CAPSULE) {
       geo = new THREE.CapsuleGeometry(size[0], size[1] * 2, 4, 8);
-    } else if (type === geomType.CYLINDER) {
-      geo = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 12);
-    } else if (type === geomType.PLANE) {
-      geo = new THREE.PlaneGeometry(1.5, 1.5);
-      mat = groundMat2;
-    } else if (type === geomType.MESH) {
-      // Approximate mesh geoms with a box scaled by convex hull approximation
-      geo = new THREE.BoxGeometry(0.05, 0.05, 0.05);
-      mat = linkMat;
+    } else if (type === GEOM.CYLINDER) {
+      geo = new THREE.CylinderGeometry(size[0], size[0], size[1] * 2, 16);
     } else {
-      continue;
+      continue; // skip PLANE and others — manual ground plane handles the floor
     }
 
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
-
-    // Apply geom offset relative to body
-    mesh.position.set(pos[0], pos[1], pos[2]);
-    // MuJoCo quat: [w, x, y, z]
-    mesh.quaternion.set(quat[1], quat[2], quat[3], quat[0]);
-
+    // geom_pos/quat are body-local in MuJoCo Z-up space — correct within mujocoRoot hierarchy
+    mesh.position.set(gpos[0], gpos[1], gpos[2]);
+    mesh.quaternion.set(gquat[1], gquat[2], gquat[3], gquat[0]); // MuJoCo [w,x,y,z] → Three [x,y,z,w]
     groups[bodyId].add(mesh);
   }
 
   return groups;
 }
 
+// syncBodies writes MuJoCo world-frame positions/quaternions into body groups.
+// mujocoRoot's -PI/2 X rotation converts the entire subtree from Z-up to Y-up.
 function syncBodies(model, data, bodyGroups) {
   for (let b = 0; b < model.nbody; b++) {
-    const pos = data.xpos.subarray(b * 3, b * 3 + 3);
+    const pos  = data.xpos.subarray(b * 3, b * 3 + 3);
     const quat = data.xquat.subarray(b * 4, b * 4 + 4);
     bodyGroups[b].position.set(pos[0], pos[1], pos[2]);
     bodyGroups[b].quaternion.set(quat[1], quat[2], quat[3], quat[0]);
