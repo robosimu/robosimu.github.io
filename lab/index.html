@@ -1001,27 +1001,38 @@ function syncBodies(model, data, bodyGroups) {
 }
 
 // ── IK solver ─────────────────────────────────────────────────────────
-function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 80, tol = 5e-4) {
+// Pre-allocate Jacobian buffers once (avoid GC churn in the loop)
+let _ikJacp = null;
+let _ikJacr = null;
+
+function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 15, tol = 5e-4) {
   const nv = model.nv;
+  // mujoco-js requires real TypedArrays — null is not accepted for jacr
+  if (!_ikJacp || _ikJacp.length !== 3 * nv) {
+    _ikJacp = new Float64Array(3 * nv);
+    _ikJacr = new Float64Array(3 * nv);
+  }
+
+  // Only update the 7 arm joints (DOFs 0-6).
+  // DOFs 7-8 are fingers; DOFs 9+ are cube freejoint DOFs — must not be touched.
+  const nArm = 7;
+
   for (let iter = 0; iter < maxIter; iter++) {
     mujoco.mj_forward(model, data);
     const sitePos = data.site_xpos.subarray(siteId * 3, siteId * 3 + 3);
-    const err = [
-      targetPos[0] - sitePos[0],
-      targetPos[1] - sitePos[1],
-      targetPos[2] - sitePos[2],
-    ];
-    const errMag = Math.hypot(...err);
+    const ex = targetPos[0] - sitePos[0];
+    const ey = targetPos[1] - sitePos[1];
+    const ez = targetPos[2] - sitePos[2];
+    const errMag = Math.hypot(ex, ey, ez);
     if (errMag < tol) break;
 
-    const jacp = new Float64Array(3 * nv);
-    mujoco.mj_jacSite(model, data, jacp, null, siteId);
+    mujoco.mj_jacSite(model, data, _ikJacp, _ikJacr, siteId);
 
-    // Damped gradient descent
-    const step = Math.min(0.5, 0.5 / errMag);
-    for (let j = 0; j < nv; j++) {
-      let dq = 0;
-      for (let i = 0; i < 3; i++) dq += jacp[i * nv + j] * err[i];
+    const step = Math.min(0.4, 0.4 / errMag);
+    for (let j = 0; j < nArm; j++) {
+      const dq = _ikJacp[0 * nv + j] * ex
+               + _ikJacp[1 * nv + j] * ey
+               + _ikJacp[2 * nv + j] * ez;
       data.qpos[j] += step * dq;
     }
     mujoco.mj_normalizeQuat(model, data.qpos);
