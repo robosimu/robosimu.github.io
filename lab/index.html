@@ -837,17 +837,6 @@ function buildPatchedXML(originalXML) {
   trayBody.appendChild(trayGeom);
   worldbody.appendChild(trayBody);
 
-  // Add TCP site inside hand body
-  const handBody = doc.querySelector('body[name="hand"]') || doc.querySelector('body[name*="hand"]');
-  if (handBody) {
-    const tcpSite = doc.createElement('site');
-    tcpSite.setAttribute('name', 'tcp');
-    tcpSite.setAttribute('pos', '0 0 0.1');
-    tcpSite.setAttribute('size', '0.01');
-    tcpSite.setAttribute('group', '1');
-    handBody.appendChild(tcpSite);
-  }
-
   const serializer = new XMLSerializer();
   return serializer.serializeToString(doc);
 }
@@ -880,7 +869,16 @@ async function loadRobotModel(mujoco) {
     const xmlUrl = MENAGERIE_BASE + xmlFile;
     const xmlRes = await fetch(xmlUrl);
     if (!xmlRes.ok) continue;
-    const xmlText = await xmlRes.text();
+    let xmlText = await xmlRes.text();
+
+    // Inject TCP site into hand body so IK has a target site to track
+    if (xmlFile === 'panda.xml') {
+      xmlText = xmlText.replace(
+        /(<body name="hand"[^>]*>)/,
+        '$1<site name="tcp" pos="0 0 0.105" size="0.01" group="1"/>'
+      );
+    }
+
     mujoco.FS.writeFile('/working/' + xmlFile, xmlText);
 
     // Extract meshdir from <compiler meshdir="..."> — defaults to empty string
