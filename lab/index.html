@@ -930,8 +930,9 @@ function buildBodyGroups(mujoco, model) {
   const GEOM = { PLANE: 0, HFIELD: 1, SPHERE: 2, CAPSULE: 3, ELLIPSOID: 4, CYLINDER: 5, BOX: 6, MESH: 7 };
 
   for (let gi = 0; gi < model.ngeom; gi++) {
-    // Skip collision-only geoms (group 2 in Menagerie models)
-    if (model.geom_group[gi] === 2) continue;
+    // Skip collision-only geoms (group 3 in Menagerie Franka model)
+    // Visual meshes use group 2; collision primitives use group 3
+    if (model.geom_group[gi] === 3) continue;
 
     const bodyId = model.geom_bodyid[gi];
     const type   = model.geom_type[gi];
