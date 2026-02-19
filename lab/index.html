@@ -1000,41 +1000,39 @@ function syncBodies(model, data, bodyGroups) {
   }
 }
 
-// ── IK solver ─────────────────────────────────────────────────────────
-// Pre-allocate Jacobian buffers once (avoid GC churn in the loop)
-let _ikJacp = null;
-let _ikJacr = null;
+// ── IK solver (numerical Jacobian via finite differences) ─────────────
+// Avoids mj_jacSite entirely — no WASM heap pointer issues.
+// Each outer iteration: 1 base mj_forward + nArm perturbation mj_forwards.
+const _ikDqs = new Float64Array(7); // pre-allocated, no GC churn
 
-function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 15, tol = 5e-4) {
-  const nv = model.nv;
-  // mujoco-js requires real TypedArrays — null is not accepted for jacr
-  if (!_ikJacp || _ikJacp.length !== 3 * nv) {
-    _ikJacp = new Float64Array(3 * nv);
-    _ikJacr = new Float64Array(3 * nv);
-  }
-
-  // Only update the 7 arm joints (DOFs 0-6).
-  // DOFs 7-8 are fingers; DOFs 9+ are cube freejoint DOFs — must not be touched.
-  const nArm = 7;
+function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 5, tol = 5e-4) {
+  const nArm = 7; // DOFs 0-6 only; fingers (7-8) and cube freejoints (9+) untouched
+  const eps = 1e-4;
+  const sp = data.site_xpos; // TypedArray view into WASM heap — always current
 
   for (let iter = 0; iter < maxIter; iter++) {
     mujoco.mj_forward(model, data);
-    const sitePos = data.site_xpos.subarray(siteId * 3, siteId * 3 + 3);
-    const ex = targetPos[0] - sitePos[0];
-    const ey = targetPos[1] - sitePos[1];
-    const ez = targetPos[2] - sitePos[2];
+    const x0 = sp[siteId * 3], y0 = sp[siteId * 3 + 1], z0 = sp[siteId * 3 + 2];
+    const ex = targetPos[0] - x0;
+    const ey = targetPos[1] - y0;
+    const ez = targetPos[2] - z0;
     const errMag = Math.hypot(ex, ey, ez);
     if (errMag < tol) break;
 
-    mujoco.mj_jacSite(model, data, _ikJacp, _ikJacr, siteId);
-
-    const step = Math.min(0.4, 0.4 / errMag);
+    // Numerical Jacobian column per joint
+    const step = Math.min(0.5, 0.5 / errMag);
     for (let j = 0; j < nArm; j++) {
-      const dq = _ikJacp[0 * nv + j] * ex
-               + _ikJacp[1 * nv + j] * ey
-               + _ikJacp[2 * nv + j] * ez;
-      data.qpos[j] += step * dq;
+      const q0 = data.qpos[j];
+      data.qpos[j] = q0 + eps;
+      mujoco.mj_forward(model, data);
+      _ikDqs[j] = step * (
+        ((sp[siteId * 3]     - x0) / eps) * ex +
+        ((sp[siteId * 3 + 1] - y0) / eps) * ey +
+        ((sp[siteId * 3 + 2] - z0) / eps) * ez
+      );
+      data.qpos[j] = q0; // restore before next column
     }
+    for (let j = 0; j < nArm; j++) data.qpos[j] += _ikDqs[j];
     mujoco.mj_normalizeQuat(model, data.qpos);
   }
   // Sync actuator targets so mj_step holds the IK solution instead of fighting it
