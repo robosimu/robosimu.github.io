@@ -477,6 +477,49 @@ input[type=range]:focus-visible {
     transition: none;
   }
 }
+
+/* ── Mobile: portrait — stack canvas above controls ─ */
+@media (max-width: 640px) {
+  #app { flex-direction: column; }
+
+  #canvas-wrap {
+    flex: none;
+    height: 55dvh;
+    min-height: 220px;
+  }
+
+  #sidebar {
+    width: 100%;
+    flex: 1;
+    max-height: 45dvh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+  }
+
+  .sidebar-header { padding: 10px var(--gap); }
+  .section        { padding: 12px var(--gap); }
+  .phase-display  { font-size: 15px; }
+}
+
+/* ── Mobile: landscape — side-by-side with narrower sidebar ─ */
+@media (max-width: 640px) and (orientation: landscape) {
+  #app { flex-direction: row; }
+
+  #canvas-wrap {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+
+  #sidebar {
+    width: 240px;
+    max-height: none;
+    border-top: none;
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.5);
+  }
+}
 </style>
 </head>
 <body>
@@ -798,6 +841,7 @@ function onResize() {
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', onResize);
+screen.orientation?.addEventListener('change', onResize);
 onResize();
 
 // ── Robot model building ──────────────────────────────────────────────
