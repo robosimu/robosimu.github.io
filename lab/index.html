@@ -916,27 +916,6 @@ async function loadRobotModel(mujoco) {
 function buildBodyGroups(mujoco, model) {
   const groups = [];
 
-  // ── Diagnostics (remove once robot renders) ───────────────────────
-  console.log('[mujoco] nbody=%d ngeom=%d nmesh=%d', model.nbody, model.ngeom, model.nmesh);
-  console.log('[mujoco] mesh_vert type:', model.mesh_vert?.constructor?.name,
-              'length:', model.mesh_vert?.length);
-  const groupCounts = {};
-  for (let gi = 0; gi < model.ngeom; gi++) {
-    const g = model.geom_group[gi]; groupCounts[g] = (groupCounts[g] || 0) + 1;
-  }
-  console.log('[mujoco] geom group counts:', groupCounts);
-  let meshGeomCount = 0, nonzeroVerts = 0;
-  for (let gi = 0; gi < model.ngeom; gi++) {
-    if (model.geom_type[gi] !== 7) continue;
-    meshGeomCount++;
-    const mid = model.geom_dataid[gi];
-    const vn  = mid >= 0 ? model.mesh_vertnum?.[mid] : -1;
-    if (vn > 0) nonzeroVerts++;
-    if (meshGeomCount <= 3) console.log(`  geom[${gi}] group=${model.geom_group[gi]} dataid=${mid} vertnum=${vn}`);
-  }
-  console.log('[mujoco] total MESH geoms:', meshGeomCount, '  with >0 verts:', nonzeroVerts);
-  // ─────────────────────────────────────────────────────────────────
-
   // Materials
   const linkMat = new THREE.MeshStandardMaterial({ color: 0xd0d0dc, metalness: 0.5, roughness: 0.3 });
   const cubeMat = new THREE.MeshStandardMaterial({ color: 0xcc2525, roughness: 0.6 });
@@ -979,7 +958,7 @@ function buildBodyGroups(mujoco, model) {
         const fn = model.mesh_facenum[meshId];
         // Copy vertex/face data out of WASM heap into fresh typed arrays
         const verts = new Float32Array(model.mesh_vert.subarray(va * 3, (va + vn) * 3));
-        const faces = new Int32Array(model.mesh_face.subarray(fa * 3, (fa + fn) * 3));
+        const faces = new Uint32Array(model.mesh_face.subarray(fa * 3, (fa + fn) * 3));
         geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
         geo.setIndex(new THREE.BufferAttribute(faces, 1));
