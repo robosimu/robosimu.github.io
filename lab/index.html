@@ -1051,6 +1051,7 @@ let data = null;
 let bodyGroups = [];
 let siteId = -1;
 let gripperJointIds = [];
+let cubeJointIds = [];
 
 let simState = {
   phase: 'IDLE',
@@ -1107,6 +1108,27 @@ function phaseDist(targetPos) {
   const tcp = getTCPPos(data, siteId);
   if (!tcp || !targetPos) return Infinity;
   return Math.hypot(tcp[0] - targetPos[0], tcp[1] - targetPos[1], tcp[2] - targetPos[2]);
+}
+
+// Teleport the grasped cube to sit just below the TCP.
+// Called every tick while gripper is closed so the cube follows the arm visually.
+function attachCubeToTCP() {
+  const idx = simState.currentCube;
+  if (idx === null) return;
+  const jid = cubeJointIds[idx];
+  if (jid < 0) return;
+  const tcp = getTCPPos(data, siteId);
+  if (!tcp) return;
+  const qadr = model.jnt_qposadr[jid];
+  data.qpos[qadr]     = tcp[0];
+  data.qpos[qadr + 1] = tcp[1];
+  data.qpos[qadr + 2] = tcp[2] - 0.05; // cube centre sits ~5 cm below TCP
+  // Identity quaternion
+  data.qpos[qadr + 3] = 1; data.qpos[qadr + 4] = 0;
+  data.qpos[qadr + 5] = 0; data.qpos[qadr + 6] = 0;
+  // Zero velocity so cube doesn't drift
+  const vadr = model.jnt_dofadr[jid];
+  for (let k = 0; k < 6; k++) data.qvel[vadr + k] = 0;
 }
 
 function moveTCP(targetPos) {
@@ -1166,40 +1188,35 @@ function tickStateMachine() {
 
   if (phase === 'GRASPING') {
     setGripper(false);
-    // Run a few steps with closed gripper, then transition
+    attachCubeToTCP();
     if (!simState._graspTimer) simState._graspTimer = 0;
     simState._graspTimer += TIMESTEP;
     if (simState._graspTimer > 0.3) {
       simState._graspTimer = 0;
-      // Attach cube to TCP (update tracked position)
       transitionTo('LIFTING');
     }
     return;
   }
 
   if (phase === 'LIFTING') {
-    const cp = getCubePos(simState.currentCube);
-    const liftPos = [cp.x, cp.y, cp.z + 0.22];
+    attachCubeToTCP();
+    const tcp = getTCPPos(data, siteId);
+    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] - 0.05 };
+    const liftPos = [CUBE_POSITIONS[simState.currentCube].x,
+                     CUBE_POSITIONS[simState.currentCube].y,
+                     CUBE_POSITIONS[simState.currentCube].z + 0.22];
     moveTCP(liftPos);
     targetMarker.position.set(...liftPos);
-    if (phaseDist(liftPos) < PHASE_DIST_THRESH) {
-      // Update tracked cube position to follow TCP
-      const tcp = getTCPPos(data, siteId);
-      if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
-      transitionTo('TRANSPORTING');
-    }
+    if (phaseDist(liftPos) < PHASE_DIST_THRESH) transitionTo('TRANSPORTING');
     return;
   }
 
   if (phase === 'TRANSPORTING') {
+    attachCubeToTCP();
     const transportPos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22];
     moveTCP(transportPos);
     targetMarker.position.set(...transportPos);
-    const tcp = getTCPPos(data, siteId);
-    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
-    if (phaseDist(transportPos) < PHASE_DIST_THRESH) {
-      transitionTo('PLACING');
-    }
+    if (phaseDist(transportPos) < PHASE_DIST_THRESH) transitionTo('PLACING');
     return;
   }
 
@@ -1207,9 +1224,17 @@ function tickStateMachine() {
     const placePos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.08];
     moveTCP(placePos);
     targetMarker.position.set(...placePos);
-    const tcp = getTCPPos(data, siteId);
-    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] };
     if (phaseDist(placePos) < PHASE_DIST_THRESH) {
+      // Drop cube at tray position before opening gripper
+      const jid = cubeJointIds[simState.currentCube];
+      if (jid >= 0) {
+        const qadr = model.jnt_qposadr[jid];
+        data.qpos[qadr]     = TRAY_POS.x;
+        data.qpos[qadr + 1] = TRAY_POS.y;
+        data.qpos[qadr + 2] = TRAY_POS.z + 0.03;
+        data.qpos[qadr + 3] = 1; data.qpos[qadr + 4] = 0;
+        data.qpos[qadr + 5] = 0; data.qpos[qadr + 6] = 0;
+      }
       setGripper(true);
       if (!simState._placeTimer) simState._placeTimer = 0;
       simState._placeTimer += TIMESTEP;
@@ -1217,6 +1242,8 @@ function tickStateMachine() {
         simState._placeTimer = 0;
         transitionTo('RETRACTING');
       }
+    } else {
+      attachCubeToTCP();
     }
     return;
   }
@@ -1522,6 +1549,11 @@ async function init() {
     const gj2 = findJointId(model, 'finger_joint2');
     if (gj1 >= 0) gripperJointIds.push(gj1);
     if (gj2 >= 0) gripperJointIds.push(gj2);
+
+    // Find cube freejoint IDs (cube_joint_0 … cube_joint_N)
+    for (let i = 0; i < CUBE_POSITIONS.length; i++) {
+      cubeJointIds.push(findJointId(model, `cube_joint_${i}`));
+    }
 
     // Build Three.js body groups
     bodyGroups = buildBodyGroups(mujoco, model);
