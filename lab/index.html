@@ -1037,6 +1037,10 @@ function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 15, tol = 5e-
     }
     mujoco.mj_normalizeQuat(model, data.qpos);
   }
+  // Sync actuator targets so mj_step holds the IK solution instead of fighting it
+  for (let j = 0; j < nArm; j++) {
+    data.ctrl[j] = data.qpos[j];
+  }
 }
 
 // ── State machine ─────────────────────────────────────────────────────
@@ -1508,6 +1512,7 @@ async function init() {
     const armQpos = HOME_POS;
     for (let i = 0; i < Math.min(armQpos.length, model.nq); i++) {
       data.qpos[i] = armQpos[i];
+      data.ctrl[i] = armQpos[i]; // actuator targets must match or physics fights qpos
     }
     mujoco.mj_forward(model, data);
 
