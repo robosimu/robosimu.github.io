@@ -762,6 +762,17 @@ const CUBE_POSITIONS = [
 const TRAY_POS = { x: 0.5, y: 0, z: 0.44 };
 const HOME_POS = [0, -0.5, 0, -1.5, 0, 1.0, 0.785];
 
+// Franka Panda hard joint limits (rad) — must be enforced in IK or arm spasms
+const PANDA_LIMITS = [
+  [-2.8973,  2.8973], // joint 1
+  [-1.7628,  1.7628], // joint 2
+  [-2.8973,  2.8973], // joint 3
+  [-3.0718, -0.0698], // joint 4 — always negative
+  [-2.8973,  2.8973], // joint 5
+  [-0.0175,  3.7525], // joint 6
+  [-2.8973,  2.8973], // joint 7
+];
+
 // ── Three.js setup ────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({
   canvas: canvasEl,
@@ -1045,37 +1056,77 @@ function syncBodies(model, data, bodyGroups) {
   }
 }
 
-// ── IK solver (numerical Jacobian, one gradient step per frame) ────────
-// One step per call + velocity cap gives smooth motion over many frames.
-// 1 base mj_forward + nArm perturbed = 8 mj_forward calls total.
-const _ikDqs = new Float64Array(7);
-const MAX_JOINT_DQ = 0.035; // ~2 deg/frame → smooth arcs at 60 fps
+// ── IK solver ──────────────────────────────────────────────────────────
+// One numerical-Jacobian gradient step per frame.
+// DLS per-column damping prevents wild steps near singularities.
+// Joint limits clamp prevents physically impossible poses.
+// Cost: 1 base + 7 perturbed mj_forward calls = 8 total (~2 ms).
+const _ikDqs     = new Float64Array(7);
+const MAX_DQ     = 0.035;  // ~2 deg/frame — smooth arcs at 60 fps
+const IK_LAMBDA2 = 0.0025; // DLS λ² = 0.05² — damps near-singular columns
 
 function solveIK(mujoco, model, data, targetPos, siteId) {
-  const nArm = 7; // DOFs 0-6; fingers (7-8) and cube freejoints (9+) untouched
+  const sp  = data.site_xpos;
   const eps = 1e-4;
-  const sp = data.site_xpos;
 
   mujoco.mj_forward(model, data);
-  const x0 = sp[siteId * 3], y0 = sp[siteId * 3 + 1], z0 = sp[siteId * 3 + 2];
-  const ex = targetPos[0] - x0, ey = targetPos[1] - y0, ez = targetPos[2] - z0;
-  const errMag = Math.hypot(ex, ey, ez);
-  if (errMag < 5e-4) return;
+  const x0 = sp[siteId*3], y0 = sp[siteId*3+1], z0 = sp[siteId*3+2];
+  const ex = targetPos[0]-x0, ey = targetPos[1]-y0, ez = targetPos[2]-z0;
+  if (Math.hypot(ex, ey, ez) < 5e-4) return;
 
-  // One Jacobian step, then clamp each joint to MAX_JOINT_DQ
-  for (let j = 0; j < nArm; j++) {
+  for (let j = 0; j < 7; j++) {
     const q0 = data.qpos[j];
     data.qpos[j] = q0 + eps;
     mujoco.mj_forward(model, data);
-    const raw = (((sp[siteId * 3]     - x0) / eps) * ex +
-                 ((sp[siteId * 3 + 1] - y0) / eps) * ey +
-                 ((sp[siteId * 3 + 2] - z0) / eps) * ez);
+    const jx = (sp[siteId*3]  -x0)/eps;
+    const jy = (sp[siteId*3+1]-y0)/eps;
+    const jz = (sp[siteId*3+2]-z0)/eps;
     data.qpos[j] = q0;
-    _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_JOINT_DQ);
+    // DLS: raw / (||J_col||² + λ²) — bounded even when Jacobian column → 0
+    const raw = (jx*ex + jy*ey + jz*ez) / (jx*jx + jy*jy + jz*jz + IK_LAMBDA2);
+    _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_DQ);
   }
-  for (let j = 0; j < nArm; j++) data.qpos[j] += _ikDqs[j];
+
+  for (let j = 0; j < 7; j++) {
+    const [lo, hi] = PANDA_LIMITS[j];
+    data.qpos[j] = Math.max(lo, Math.min(hi, data.qpos[j] + _ikDqs[j]));
+    data.ctrl[j] = data.qpos[j]; // keep actuator target in sync
+  }
   mujoco.mj_normalizeQuat(model, data.qpos);
-  for (let j = 0; j < nArm; j++) data.ctrl[j] = data.qpos[j];
+}
+
+// ── Smooth TCP trajectory ───────────────────────────────────────────────
+// Instead of snapping the IK target on every phase transition, advance a
+// sub-target toward the final waypoint at a fixed Cartesian speed.
+// This eliminates the direction-change jerk between phases.
+const TCP_SPEED  = 0.004; // m/frame ≈ 0.24 m/s — natural human arm pace
+let _smoothTarget = null;
+
+function resetSmoothTarget() { _smoothTarget = null; }
+
+function moveTCP(finalPos) {
+  simState.targetPos = finalPos;
+  if (siteId < 0) return;
+
+  if (!_smoothTarget) {
+    // Bootstrap from current TCP position so arm doesn't jump
+    const tcp = getTCPPos(data, siteId);
+    _smoothTarget = tcp ? [...tcp] : [...finalPos];
+  }
+
+  const dx = finalPos[0]-_smoothTarget[0];
+  const dy = finalPos[1]-_smoothTarget[1];
+  const dz = finalPos[2]-_smoothTarget[2];
+  const dist = Math.hypot(dx, dy, dz);
+  if (dist <= TCP_SPEED) {
+    _smoothTarget[0] = finalPos[0]; _smoothTarget[1] = finalPos[1]; _smoothTarget[2] = finalPos[2];
+  } else {
+    const s = TCP_SPEED / dist;
+    _smoothTarget[0] += dx*s; _smoothTarget[1] += dy*s; _smoothTarget[2] += dz*s;
+  }
+
+  targetMarker.position.set(_smoothTarget[0], _smoothTarget[1], _smoothTarget[2]);
+  solveIK(mujoco, model, data, _smoothTarget, siteId);
 }
 
 // ── State machine ─────────────────────────────────────────────────────
@@ -1185,12 +1236,11 @@ function getCubePos(idx) {
 // Phase transition distance threshold
 const PHASE_DIST_THRESH = 0.01;
 
-function tickStateMachine() {
+function tickStateMachine(dt) {
   const { phase } = simState;
 
   if (phase === 'IDLE') {
     if (simState.autoDemo && simState.cubeQueue.length === 0) {
-      // Reload queue for looping demo
       simState.cubeQueue = [0, 1, 2, 3];
     }
     if (simState.cubeQueue.length > 0) {
@@ -1203,32 +1253,24 @@ function tickStateMachine() {
   if (phase === 'APPROACHING_ABOVE') {
     const cp = getCubePos(simState.currentCube);
     const above = [cp.x, cp.y, cp.z + 0.18];
-    moveTCP(above);
-    targetMarker.position.set(cp.x, cp.y, cp.z + 0.18);
     targetMarker.visible = true;
-    if (phaseDist(above) < PHASE_DIST_THRESH) {
-      transitionTo('APPROACHING');
-    }
+    moveTCP(above); // also sets targetMarker.position via smooth target
+    if (phaseDist(above) < PHASE_DIST_THRESH) transitionTo('APPROACHING');
     return;
   }
 
   if (phase === 'APPROACHING') {
     const cp = getCubePos(simState.currentCube);
-    const graspPos = [cp.x, cp.y, cp.z + 0.05];
-    moveTCP(graspPos);
-    targetMarker.position.set(...graspPos);
-    if (phaseDist(graspPos) < PHASE_DIST_THRESH) {
-      transitionTo('GRASPING');
-    }
+    moveTCP([cp.x, cp.y, cp.z + 0.05]);
+    if (phaseDist([cp.x, cp.y, cp.z + 0.05]) < PHASE_DIST_THRESH) transitionTo('GRASPING');
     return;
   }
 
   if (phase === 'GRASPING') {
     setGripper(false);
     attachCubeToTCP();
-    if (!simState._graspTimer) simState._graspTimer = 0;
-    simState._graspTimer += TIMESTEP;
-    if (simState._graspTimer > 0.3) {
+    simState._graspTimer = (simState._graspTimer || 0) + dt;
+    if (simState._graspTimer > 0.4) { // 0.4 s real time
       simState._graspTimer = 0;
       transitionTo('LIFTING');
     }
@@ -1237,45 +1279,36 @@ function tickStateMachine() {
 
   if (phase === 'LIFTING') {
     attachCubeToTCP();
-    const tcp = getTCPPos(data, siteId);
-    if (tcp) cubePositions[simState.currentCube] = { x: tcp[0], y: tcp[1], z: tcp[2] - 0.05 };
     const liftPos = [CUBE_POSITIONS[simState.currentCube].x,
                      CUBE_POSITIONS[simState.currentCube].y,
                      CUBE_POSITIONS[simState.currentCube].z + 0.22];
     moveTCP(liftPos);
-    targetMarker.position.set(...liftPos);
     if (phaseDist(liftPos) < PHASE_DIST_THRESH) transitionTo('TRANSPORTING');
     return;
   }
 
   if (phase === 'TRANSPORTING') {
     attachCubeToTCP();
-    const transportPos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22];
-    moveTCP(transportPos);
-    targetMarker.position.set(...transportPos);
-    if (phaseDist(transportPos) < PHASE_DIST_THRESH) transitionTo('PLACING');
+    moveTCP([TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22]);
+    if (phaseDist([TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22]) < PHASE_DIST_THRESH) transitionTo('PLACING');
     return;
   }
 
   if (phase === 'PLACING') {
     const placePos = [TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.08];
     moveTCP(placePos);
-    targetMarker.position.set(...placePos);
     if (phaseDist(placePos) < PHASE_DIST_THRESH) {
-      // Drop cube at tray position before opening gripper
+      // Snap cube to tray centre and release gripper
       const jid = cubeJointIds[simState.currentCube];
       if (jid >= 0) {
-        const qadr = model.jnt_qposadr[jid];
-        data.qpos[qadr]     = TRAY_POS.x;
-        data.qpos[qadr + 1] = TRAY_POS.y;
-        data.qpos[qadr + 2] = TRAY_POS.z + 0.03;
-        data.qpos[qadr + 3] = 1; data.qpos[qadr + 4] = 0;
-        data.qpos[qadr + 5] = 0; data.qpos[qadr + 6] = 0;
+        const qa = model.jnt_qposadr[jid];
+        data.qpos[qa]   = TRAY_POS.x; data.qpos[qa+1] = TRAY_POS.y;
+        data.qpos[qa+2] = TRAY_POS.z + 0.03;
+        data.qpos[qa+3] = 1; data.qpos[qa+4] = 0; data.qpos[qa+5] = 0; data.qpos[qa+6] = 0;
       }
       setGripper(true);
-      if (!simState._placeTimer) simState._placeTimer = 0;
-      simState._placeTimer += TIMESTEP;
-      if (simState._placeTimer > 0.2) {
+      simState._placeTimer = (simState._placeTimer || 0) + dt;
+      if (simState._placeTimer > 0.3) { // 0.3 s real time
         simState._placeTimer = 0;
         transitionTo('RETRACTING');
       }
@@ -1286,15 +1319,10 @@ function tickStateMachine() {
   }
 
   if (phase === 'RETRACTING') {
-    const homeAbove = [0, -0.3, 0.7];
-    moveTCP(homeAbove);
     targetMarker.visible = false;
-    if (phaseDist(homeAbove) < 0.04) {
-      if (simState.cubeQueue.length > 0) {
-        transitionTo('IDLE');
-      } else {
-        transitionTo('DONE');
-      }
+    moveTCP([0, -0.3, 0.7]);
+    if (phaseDist([0, -0.3, 0.7]) < 0.04) {
+      transitionTo(simState.cubeQueue.length > 0 ? 'IDLE' : 'DONE');
     }
     return;
   }
@@ -1302,7 +1330,6 @@ function tickStateMachine() {
   if (phase === 'DONE') {
     targetMarker.visible = false;
     if (simState.autoDemo) {
-      // Reset cube positions for demo loop
       cubePositions = CUBE_POSITIONS.map(p => ({ x: p.x, y: p.y, z: p.z }));
       transitionTo('IDLE');
     }
@@ -1389,7 +1416,7 @@ function loop() {
   lastFrameTime = now;
 
   // State machine + IK run once per frame (IK is expensive: nArm mj_forwards per iteration)
-  tickStateMachine();
+  tickStateMachine(dt);
 
   // Physics steps run independently — arm held by ctrl set during IK
   const steps = Math.round(STEPS_PER_FRAME * simState.speed);
@@ -1544,14 +1571,16 @@ btnReset.addEventListener('click', () => {
   setGripper(true);
   cubePositions = CUBE_POSITIONS.map(p => ({ x: p.x, y: p.y, z: p.z }));
 
-  // Reset qpos to home pose
+  // Reset qpos + ctrl to home pose
   if (simState.initialQpos && model && data) {
     for (let i = 0; i < simState.initialQpos.length; i++) {
       data.qpos[i] = simState.initialQpos[i];
     }
+    for (let i = 0; i < HOME_POS.length; i++) data.ctrl[i] = HOME_POS[i];
     for (let i = 0; i < model.nv; i++) data.qvel[i] = 0;
     mujoco.mj_forward(model, data);
   }
+  resetSmoothTarget();
   setPhase('IDLE', 'Scene reset.');
 });
 
