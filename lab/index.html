@@ -14,7 +14,7 @@
   }
 }
 </script>
-<link rel="preload" href="https://unpkg.com/three@0.169.0/build/three.module.js" as="script" crossorigin>
+<link rel="modulepreload" href="https://unpkg.com/three@0.169.0/build/three.module.js" crossorigin>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1092,7 +1092,6 @@ function solveIK(mujoco, model, data, targetPos, siteId) {
     data.qpos[j] = Math.max(lo, Math.min(hi, data.qpos[j] + _ikDqs[j]));
     data.ctrl[j] = data.qpos[j]; // keep actuator target in sync
   }
-  mujoco.mj_normalizeQuat(model, data.qpos);
 }
 
 // ── Smooth TCP trajectory ───────────────────────────────────────────────
@@ -1139,6 +1138,7 @@ let data = null;
 let bodyGroups = [];
 let siteId = -1;
 let gripperJointIds = [];
+let gripperActuatorIds = [];
 let cubeJointIds = [];
 
 let simState = {
@@ -1184,11 +1184,12 @@ function getTCPPos(data, siteId) {
 
 function setGripper(open) {
   simState.gripperOpen = open;
-  if (gripperJointIds.length >= 2) {
-    const val = open ? 0.04 : 0.0;
-    for (const id of gripperJointIds) {
-      data.qpos[model.jnt_qposadr[id]] = val;
-    }
+  const val = open ? 0.04 : 0.0;
+  for (const id of gripperJointIds) {
+    data.qpos[model.jnt_qposadr[id]] = val;
+  }
+  for (const aid of gripperActuatorIds) {
+    data.ctrl[aid] = val;
   }
 }
 
@@ -1217,13 +1218,6 @@ function attachCubeToTCP() {
   // Zero velocity so cube doesn't drift
   const vadr = model.jnt_dofadr[jid];
   for (let k = 0; k < 6; k++) data.qvel[vadr + k] = 0;
-}
-
-function moveTCP(targetPos) {
-  simState.targetPos = targetPos;
-  if (siteId >= 0) {
-    solveIK(mujoco, model, data, targetPos, siteId);
-  }
 }
 
 // Cube positions tracked in JS (since MuJoCo freejoint cubes move)
@@ -1649,6 +1643,14 @@ async function init() {
     const gj2 = findJointId(model, 'finger_joint2');
     if (gj1 >= 0) gripperJointIds.push(gj1);
     if (gj2 >= 0) gripperJointIds.push(gj2);
+
+    // Find actuators that drive the gripper joints (joint transmission, trntype=0)
+    for (let a = 0; a < model.nu; a++) {
+      if (model.actuator_trntype[a] === 0) {
+        const jid = model.actuator_trnid[a * 2];
+        if (gripperJointIds.includes(jid)) gripperActuatorIds.push(a);
+      }
+    }
 
     // Find cube freejoint IDs (cube_joint_0 … cube_joint_N)
     for (let i = 0; i < CUBE_POSITIONS.length; i++) {
