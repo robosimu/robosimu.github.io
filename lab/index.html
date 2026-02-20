@@ -1231,25 +1231,26 @@ function phaseDist(targetPos) {
   return Math.hypot(tcp[0] - targetPos[0], tcp[1] - targetPos[1], tcp[2] - targetPos[2]);
 }
 
-// Teleport the grasped cube to sit just below the TCP.
-// Called every tick while gripper is closed so the cube follows the arm visually.
-function attachCubeToTCP() {
-  const idx = simState.currentCube;
-  if (idx === null) return;
-  const jid = cubeJointIds[idx];
+// Called between mj_step1 and mj_step2 while the gripper is closed.
+// mj_step1 computed qacc from current state; we override it here so that
+// mj_step2's integration leaves the cube exactly where we set it.
+function injectGraspedCube() {
+  if (simState.gripperOpen || simState.currentCube === null) return;
+  const jid = cubeJointIds[simState.currentCube];
   if (jid < 0) return;
   const tcp = getTCPPos(data, siteId);
   if (!tcp) return;
   const qadr = model.jnt_qposadr[jid];
   data.qpos[qadr]     = tcp[0];
   data.qpos[qadr + 1] = tcp[1];
-  data.qpos[qadr + 2] = tcp[2] - 0.05; // cube centre sits ~5 cm below TCP
-  // Identity quaternion
+  data.qpos[qadr + 2] = tcp[2] - 0.05;
   data.qpos[qadr + 3] = 1; data.qpos[qadr + 4] = 0;
   data.qpos[qadr + 5] = 0; data.qpos[qadr + 6] = 0;
-  // Zero velocity so cube doesn't drift
-  const vadr = model.jnt_dofadr[jid];
-  for (let k = 0; k < 6; k++) data.qvel[vadr + k] = 0;
+  const dadr = model.jnt_dofadr[jid];
+  for (let k = 0; k < 6; k++) {
+    data.qvel[dadr + k] = 0;
+    data.qacc[dadr + k] = 0; // zero acceleration so step2 doesn't integrate drift
+  }
 }
 
 // Cube positions tracked in JS (since MuJoCo freejoint cubes move)
@@ -1294,7 +1295,6 @@ function tickStateMachine(dt) {
 
   if (phase === 'GRASPING') {
     setGripper(false);
-    attachCubeToTCP();
     simState._graspTimer = (simState._graspTimer || 0) + dt;
     if (simState._graspTimer > 0.4) { // 0.4 s real time
       simState._graspTimer = 0;
@@ -1304,7 +1304,6 @@ function tickStateMachine(dt) {
   }
 
   if (phase === 'LIFTING') {
-    attachCubeToTCP();
     const liftPos = [CUBE_POSITIONS[simState.currentCube].x,
                      CUBE_POSITIONS[simState.currentCube].y,
                      CUBE_POSITIONS[simState.currentCube].z + 0.22];
@@ -1314,7 +1313,6 @@ function tickStateMachine(dt) {
   }
 
   if (phase === 'TRANSPORTING') {
-    attachCubeToTCP();
     moveTCP([TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22]);
     if (phaseDist([TRAY_POS.x, TRAY_POS.y, TRAY_POS.z + 0.22]) < PHASE_DIST_THRESH) transitionTo('PLACING');
     return;
@@ -1338,8 +1336,6 @@ function tickStateMachine(dt) {
         simState._placeTimer = 0;
         transitionTo('RETRACTING');
       }
-    } else {
-      attachCubeToTCP();
     }
     return;
   }
@@ -1444,10 +1440,13 @@ function loop() {
   // State machine + IK run once per frame (IK is expensive: nArm mj_forwards per iteration)
   tickStateMachine(dt);
 
-  // Physics steps run independently — arm held by ctrl set during IK
+  // mj_step1/step2 split: inject grasped cube between dynamics and integration
+  // so the cube is pinned to TCP through every substep, not just once per frame
   const steps = Math.round(STEPS_PER_FRAME * simState.speed);
   for (let s = 0; s < steps; s++) {
-    mujoco.mj_step(model, data);
+    mujoco.mj_step1(model, data);
+    injectGraspedCube();
+    mujoco.mj_step2(model, data);
   }
 
   syncBodies(model, data, bodyGroups);
