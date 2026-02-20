@@ -1072,7 +1072,15 @@ function solveIK(mujoco, model, data, targetPos, siteId) {
   mujoco.mj_forward(model, data);
   const x0 = sp[siteId*3], y0 = sp[siteId*3+1], z0 = sp[siteId*3+2];
   const ex = targetPos[0]-x0, ey = targetPos[1]-y0, ez = targetPos[2]-z0;
-  if (Math.hypot(ex, ey, ez) < 5e-4) return;
+  const dist = Math.hypot(ex, ey, ez);
+
+  // Kinematic control: zero arm qvel so accumulated velocity doesn't drift past target
+  for (let j = 0; j < 7; j++) data.qvel[j] = 0;
+
+  if (dist < 5e-4) return;
+
+  // Scale step down linearly near target — prevents oscillation when arm is close
+  const stepScale = Math.min(1.0, dist / 0.05);
 
   for (let j = 0; j < 7; j++) {
     const q0 = data.qpos[j];
@@ -1084,7 +1092,7 @@ function solveIK(mujoco, model, data, targetPos, siteId) {
     data.qpos[j] = q0;
     // DLS: raw / (||J_col||² + λ²) — bounded even when Jacobian column → 0
     const raw = (jx*ex + jy*ey + jz*ez) / (jx*jx + jy*jy + jz*jz + IK_LAMBDA2);
-    _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_DQ);
+    _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_DQ * stepScale);
   }
 
   for (let j = 0; j < 7; j++) {
@@ -1227,8 +1235,8 @@ function getCubePos(idx) {
   return cubePositions[idx];
 }
 
-// Phase transition distance threshold
-const PHASE_DIST_THRESH = 0.01;
+// Phase transition distance threshold (2.5 cm — achievable with kinematic IK + DLS)
+const PHASE_DIST_THRESH = 0.025;
 
 function tickStateMachine(dt) {
   const { phase } = simState;
