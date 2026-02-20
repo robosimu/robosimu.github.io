@@ -1064,41 +1064,65 @@ function syncBodies(model, data, bodyGroups) {
 const _ikDqs     = new Float64Array(7);
 const MAX_DQ     = 0.035;  // ~2 deg/frame — smooth arcs at 60 fps
 const IK_LAMBDA2 = 0.0025; // DLS λ² = 0.05² — damps near-singular columns
+const ORI_WEIGHT = 0.5;    // weight of orientation vs position in the 5D error (0 = position-only)
 
 function solveIK(mujoco, model, data, targetPos, siteId) {
-  const sp  = data.site_xpos;
-  const eps = 1e-4;
+  const sp   = data.site_xpos;
+  const sm   = data.site_xmat; // row-major 3×3 rotation matrices for sites
+  const eps  = 1e-4;
+  const base = siteId * 9;
 
   mujoco.mj_forward(model, data);
   const x0 = sp[siteId*3], y0 = sp[siteId*3+1], z0 = sp[siteId*3+2];
   const ex = targetPos[0]-x0, ey = targetPos[1]-y0, ez = targetPos[2]-z0;
   const dist = Math.hypot(ex, ey, ez);
 
-  // Kinematic control: zero arm qvel so accumulated velocity doesn't drift past target
+  // Zero arm qvel so accumulated velocity doesn't drift past target
   for (let j = 0; j < 7; j++) data.qvel[j] = 0;
 
-  if (dist < 5e-4) return;
+  // Orientation error: align TCP Z-axis with world -Z (gripper pointing straight down).
+  // xmat column 2 = TCP Z in world = [mat[2], mat[5], mat[8]] (row-major).
+  // e_ori = current_z × desired_z  where desired = [0,0,-1]
+  //       = [czx,czy,czz] × [0,0,-1] = [-czy, czx, 0]
+  // Zero when already aligned; grows with angular deviation.
+  const czx0 = sm ? sm[base+2] : 0;
+  const czy0 = sm ? sm[base+5] : 0;
+  const oex0 = -czy0 * ORI_WEIGHT;
+  const oey0 =  czx0 * ORI_WEIGHT;
 
-  // Scale step down linearly near target — prevents oscillation when arm is close
+  if (dist < 5e-4 && Math.hypot(oex0, oey0) < 1e-3) return;
+
+  // Scale position step down near target to prevent overshoot/oscillation.
+  // Orientation steps run at full rate so the gripper keeps settling.
   const stepScale = Math.min(1.0, dist / 0.05);
 
   for (let j = 0; j < 7; j++) {
     const q0 = data.qpos[j];
     data.qpos[j] = q0 + eps;
     mujoco.mj_forward(model, data);
+
+    // Position Jacobian column j
     const jx = (sp[siteId*3]  -x0)/eps;
     const jy = (sp[siteId*3+1]-y0)/eps;
     const jz = (sp[siteId*3+2]-z0)/eps;
+
+    // Orientation Jacobian column j: finite-difference of e_ori
+    const jox = sm ? (czy0 - sm[base+5]) / eps * ORI_WEIGHT : 0;
+    const joy = sm ? (sm[base+2] - czx0) / eps * ORI_WEIGHT : 0;
+
     data.qpos[j] = q0;
-    // DLS: raw / (||J_col||² + λ²) — bounded even when Jacobian column → 0
-    const raw = (jx*ex + jy*ey + jz*ez) / (jx*jx + jy*jy + jz*jz + IK_LAMBDA2);
+
+    // DLS combining 5D position+orientation error
+    const jdot_e = jx*ex + jy*ey + jz*ez + jox*oex0 + joy*oey0;
+    const jnorm2 = jx*jx + jy*jy + jz*jz + jox*jox + joy*joy + IK_LAMBDA2;
+    const raw = jdot_e / jnorm2;
     _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_DQ * stepScale);
   }
 
   for (let j = 0; j < 7; j++) {
     const [lo, hi] = PANDA_LIMITS[j];
     data.qpos[j] = Math.max(lo, Math.min(hi, data.qpos[j] + _ikDqs[j]));
-    data.ctrl[j] = data.qpos[j]; // keep actuator target in sync
+    data.ctrl[j] = data.qpos[j];
   }
 }
 
