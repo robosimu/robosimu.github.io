@@ -1045,45 +1045,37 @@ function syncBodies(model, data, bodyGroups) {
   }
 }
 
-// ── IK solver (numerical Jacobian via finite differences) ─────────────
-// Avoids mj_jacSite entirely — no WASM heap pointer issues.
-// Each outer iteration: 1 base mj_forward + nArm perturbation mj_forwards.
-const _ikDqs = new Float64Array(7); // pre-allocated, no GC churn
+// ── IK solver (numerical Jacobian, one gradient step per frame) ────────
+// One step per call + velocity cap gives smooth motion over many frames.
+// 1 base mj_forward + nArm perturbed = 8 mj_forward calls total.
+const _ikDqs = new Float64Array(7);
+const MAX_JOINT_DQ = 0.035; // ~2 deg/frame → smooth arcs at 60 fps
 
-function solveIK(mujoco, model, data, targetPos, siteId, maxIter = 3, tol = 5e-4) {
-  const nArm = 7; // DOFs 0-6 only; fingers (7-8) and cube freejoints (9+) untouched
+function solveIK(mujoco, model, data, targetPos, siteId) {
+  const nArm = 7; // DOFs 0-6; fingers (7-8) and cube freejoints (9+) untouched
   const eps = 1e-4;
-  const sp = data.site_xpos; // TypedArray view into WASM heap — always current
+  const sp = data.site_xpos;
 
-  for (let iter = 0; iter < maxIter; iter++) {
-    mujoco.mj_forward(model, data);
-    const x0 = sp[siteId * 3], y0 = sp[siteId * 3 + 1], z0 = sp[siteId * 3 + 2];
-    const ex = targetPos[0] - x0;
-    const ey = targetPos[1] - y0;
-    const ez = targetPos[2] - z0;
-    const errMag = Math.hypot(ex, ey, ez);
-    if (errMag < tol) break;
+  mujoco.mj_forward(model, data);
+  const x0 = sp[siteId * 3], y0 = sp[siteId * 3 + 1], z0 = sp[siteId * 3 + 2];
+  const ex = targetPos[0] - x0, ey = targetPos[1] - y0, ez = targetPos[2] - z0;
+  const errMag = Math.hypot(ex, ey, ez);
+  if (errMag < 5e-4) return;
 
-    // Numerical Jacobian column per joint
-    const step = Math.min(0.5, 0.5 / errMag);
-    for (let j = 0; j < nArm; j++) {
-      const q0 = data.qpos[j];
-      data.qpos[j] = q0 + eps;
-      mujoco.mj_forward(model, data);
-      _ikDqs[j] = step * (
-        ((sp[siteId * 3]     - x0) / eps) * ex +
-        ((sp[siteId * 3 + 1] - y0) / eps) * ey +
-        ((sp[siteId * 3 + 2] - z0) / eps) * ez
-      );
-      data.qpos[j] = q0; // restore before next column
-    }
-    for (let j = 0; j < nArm; j++) data.qpos[j] += _ikDqs[j];
-    mujoco.mj_normalizeQuat(model, data.qpos);
-  }
-  // Sync actuator targets so mj_step holds the IK solution instead of fighting it
+  // One Jacobian step, then clamp each joint to MAX_JOINT_DQ
   for (let j = 0; j < nArm; j++) {
-    data.ctrl[j] = data.qpos[j];
+    const q0 = data.qpos[j];
+    data.qpos[j] = q0 + eps;
+    mujoco.mj_forward(model, data);
+    const raw = (((sp[siteId * 3]     - x0) / eps) * ex +
+                 ((sp[siteId * 3 + 1] - y0) / eps) * ey +
+                 ((sp[siteId * 3 + 2] - z0) / eps) * ez);
+    data.qpos[j] = q0;
+    _ikDqs[j] = Math.sign(raw) * Math.min(Math.abs(raw), MAX_JOINT_DQ);
   }
+  for (let j = 0; j < nArm; j++) data.qpos[j] += _ikDqs[j];
+  mujoco.mj_normalizeQuat(model, data.qpos);
+  for (let j = 0; j < nArm; j++) data.ctrl[j] = data.qpos[j];
 }
 
 // ── State machine ─────────────────────────────────────────────────────
@@ -1334,12 +1326,44 @@ function transitionTo(phase) {
 }
 
 // ── Readout update ────────────────────────────────────────────────────
+const dbgEl = (() => {
+  const d = document.createElement('pre');
+  d.id = 'dbg';
+  Object.assign(d.style, {
+    position:'fixed', bottom:'8px', left:'8px', margin:'0',
+    background:'rgba(0,0,0,0.7)', color:'#7fff7f',
+    font:'11px/1.5 monospace', padding:'6px 8px',
+    borderRadius:'3px', pointerEvents:'none', zIndex:'999',
+    display: 'none', // hidden by default; toggle with D key
+  });
+  document.body.appendChild(d);
+  return d;
+})();
+
+window.addEventListener('keydown', e => {
+  if (e.key === 'd' || e.key === 'D') {
+    dbgEl.style.display = dbgEl.style.display === 'none' ? 'block' : 'none';
+  }
+});
+
 function updateReadouts() {
   const tcp = getTCPPos(data, siteId);
   if (tcp) {
     eeX.textContent = tcp[0].toFixed(3);
     eeY.textContent = tcp[1].toFixed(3);
     eeZ.textContent = tcp[2].toFixed(3);
+
+    if (dbgEl.style.display !== 'none') {
+      const tgt = simState.targetPos;
+      const dist = tgt ? Math.hypot(tcp[0]-tgt[0], tcp[1]-tgt[1], tcp[2]-tgt[2]) : '-';
+      dbgEl.textContent =
+        `phase  : ${simState.phase}\n` +
+        `tcp    : ${tcp.map(v=>v.toFixed(3)).join('  ')}\n` +
+        `target : ${tgt ? tgt.map(v=>v.toFixed(3)).join('  ') : 'none'}\n` +
+        `dist   : ${typeof dist === 'number' ? dist.toFixed(4) : dist}\n` +
+        `cube   : ${simState.currentCube ?? '-'}\n` +
+        `gripper: ${simState.gripperOpen ? 'open' : 'closed'}`;
+    }
   }
   eeGrip.textContent = simState.gripperOpen ? 'OPEN' : 'CLOSED';
 }
