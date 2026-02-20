@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0d0d12">
+<meta name="theme-color" content="#16161a">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2316161a'/><text y='.9em' font-size='90'>🤖</text></svg>">
 <title>SLAM Explorer — Level 5</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -77,6 +78,7 @@ canvas {
 }
 
 .back-link:hover { color: var(--text-sec); }
+.back-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
   .back-link { transition: none; }
@@ -230,7 +232,7 @@ input[type="range"]:focus-visible {
 <body>
 <div id="app">
   <div id="canvas-wrap">
-    <canvas id="sim-canvas"></canvas>
+    <canvas id="sim-canvas" aria-label="SLAM exploration simulation showing robot building a map of an unknown environment"></canvas>
   </div>
 
   <aside id="sidebar">
@@ -283,7 +285,7 @@ input[type="range"]:focus-visible {
           <span class="joint-name">Sim Speed</span>
           <span id="v-speed" class="joint-val">1.0×</span>
         </div>
-        <input type="range" id="s-speed" min="0.3" max="5" step="0.1" value="1">
+        <input type="range" id="s-speed" min="0.3" max="5" step="0.1" value="1" aria-label="Simulation speed">
       </div>
     </div>
 
@@ -623,9 +625,15 @@ function resize() {
   const wrap = document.getElementById('canvas-wrap');
   const W = wrap.clientWidth;
   const H = wrap.clientHeight;
+  const dpr = window.devicePixelRatio || 1;
   cellSize = Math.min(Math.floor(W / COLS), Math.floor(H / ROWS));
-  canvas.width  = COLS * cellSize;
-  canvas.height = ROWS * cellSize;
+  const logW = COLS * cellSize;
+  const logH = ROWS * cellSize;
+  canvas.width  = logW * dpr;
+  canvas.height = logH * dpr;
+  canvas.style.width  = logW + 'px';
+  canvas.style.height = logH + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 // ── Drawing ──────────────────────────────────────────────────────────────────
@@ -782,22 +790,24 @@ function drawRobot() {
 }
 
 function drawExploreComplete() {
+  const W = COLS * cellSize;
+  const H = ROWS * cellSize;
   ctx.save();
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#e8e8e0';
   ctx.font = `bold ${Math.round(cellSize * 2.2)}px -apple-system, BlinkMacSystemFont, system-ui, sans-serif`;
   ctx.textAlign    = 'center';
   ctx.textBaseline = 'middle';
   ctx.letterSpacing = '0.12em';
-  ctx.fillText('MAP COMPLETE', canvas.width / 2, canvas.height / 2);
+  ctx.fillText('MAP COMPLETE', W / 2, H / 2);
   ctx.restore();
 }
 
 function drawRuler() {
   const rulerCells = 5;
   const px = rulerCells * cellSize;
-  const x0 = 12, y0 = canvas.height - 14;
+  const x0 = 12, y0 = ROWS * cellSize - 14;
   ctx.save();
   ctx.strokeStyle = 'rgba(136,136,160,0.5)';
   ctx.lineWidth   = 1;
@@ -815,9 +825,11 @@ function drawRuler() {
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const W = COLS * cellSize;
+  const H = ROWS * cellSize;
+  ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#0d0d12';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
   drawBuiltMap();
   drawPath();

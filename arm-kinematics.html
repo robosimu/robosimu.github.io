@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#16161a">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2316161a'/><text y='.9em' font-size='90'>🤖</text></svg>">
 <title>3-DOF Planar Arm — Forward &amp; Inverse Kinematics</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -90,6 +91,19 @@ canvas {
   color: var(--text-mute);
   margin-top: 3px;
 }
+
+.back-link {
+  display: inline-block;
+  color: var(--text-mute);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  font-size: 11px;
+  margin-bottom: 10px;
+  transition: color 0.15s;
+}
+.back-link:hover { color: var(--text-sec); }
+.back-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .back-link { transition: none; } }
 
 .section {
   padding: var(--gap);
@@ -365,11 +379,12 @@ button.active:hover {
 <body>
 <div id="app">
   <div id="canvas-wrap">
-    <canvas id="c"></canvas>
+    <canvas id="c" aria-label="3-DOF planar arm kinematics simulation"></canvas>
     <div id="canvas-hint" aria-live="polite"></div>
   </div>
   <aside id="sidebar">
     <div class="sidebar-header">
+      <a href="index.html" class="back-link">← Learning Path</a>
       <h1>3-DOF Planar Arm</h1>
       <p>Forward &amp; Inverse Kinematics</p>
     </div>
@@ -502,7 +517,7 @@ button.active:hover {
       </div>
       <div class="speed-row">
         <span class="speed-label">Speed</span>
-        <input type="range" id="s-speed" min="0.2" max="3" step="0.1" value="1" style="flex:1">
+        <input type="range" id="s-speed" min="0.2" max="3" step="0.1" value="1" style="flex:1" aria-label="Simulation speed">
         <span class="speed-val" id="v-speed">1.0×</span>
       </div>
     </div>
@@ -691,7 +706,7 @@ function updateUI(pose) {
   v2.textContent = fmt1(angles[1]) + '°';
   v3.textContent = fmt1(angles[2]) + '°';
 
-  const { j2, ee, cumA3 } = pose;
+  const { j1, j2, ee, cumA3 } = pose;
   const reach = Math.sqrt(ee.x * ee.x + ee.y * ee.y);
   const totalDeg = cumA3 * 180 / Math.PI;
 
@@ -700,10 +715,10 @@ function updateUI(pose) {
   eeA.textContent = fmt1(normalizeAngle(totalDeg)) + '°';
   eeR.textContent = fmt1(reach);
 
-  j2x.textContent = fmt1(j2.x);
-  j2y.textContent = fmt1(j2.y);
-  j3x.textContent = fmt1(ee.x);
-  j3y.textContent = fmt1(ee.y);
+  j2x.textContent = fmt1(j1.x);
+  j2y.textContent = fmt1(j1.y);
+  j3x.textContent = fmt1(j2.x);
+  j3y.textContent = fmt1(j2.y);
 
   updateIKStatus();
 }
@@ -763,7 +778,7 @@ function resize() {
   canvas.height = H * devicePixelRatio;
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
-  ctx.scale(devicePixelRatio, devicePixelRatio);
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 
   scale = Math.min(W, H) / (MAX_REACH * 2.6);
   ox = W * 0.45;
@@ -1091,9 +1106,9 @@ function draw() {
   drawLink(j2.x, j2.y, ee.x, ee.y, 7, '#d06828');
 
   const arcRad = 30;
-  drawAngleArc(j0.x, j0.y, 0, a1, arcRad, fmt1deg(angles[0]) + '°');
-  drawAngleArc(j1.x, j1.y, a1, cumA2 - a1, arcRad, fmt1deg(angles[1]) + '°');
-  drawAngleArc(j2.x, j2.y, cumA2, cumA3 - cumA2, arcRad, fmt1deg(angles[2]) + '°');
+  drawAngleArc(j0.x, j0.y, 0, a1, arcRad, fmt1(angles[0]) + '°');
+  drawAngleArc(j1.x, j1.y, a1, cumA2 - a1, arcRad, fmt1(angles[1]) + '°');
+  drawAngleArc(j2.x, j2.y, cumA2, cumA3 - cumA2, arcRad, fmt1(angles[2]) + '°');
 
   const frameLen = 42;
   drawFrame(j0.x, j0.y, a1, frameLen);
@@ -1111,9 +1126,6 @@ function draw() {
   drawRuler();
 }
 
-function fmt1deg(v) {
-  return (Math.round(v * 10) / 10).toFixed(1);
-}
 
 // ── Demo animation ───────────────────────────────────────────────────
 function easeInOut(t) {

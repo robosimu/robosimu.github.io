@@ -172,7 +172,7 @@ button:hover {
 button.active {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: #0f0f0f;
 }
 
 button:focus-visible {
@@ -236,10 +236,7 @@ canvas {
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.001ms !important;
-    transition-duration: 0.001ms !important;
-  }
+  button, input[type="range"] { transition: none; }
 }
 </style>
 </head>
@@ -293,7 +290,7 @@ canvas {
         <span class="joint-name">Speed</span>
         <span id="v-speed" class="joint-val">1.0×</span>
       </div>
-      <input type="range" id="s-speed" min="0.3" max="4" step="0.1" value="1">
+      <input type="range" id="s-speed" min="0.3" max="4" step="0.1" value="1" aria-label="Simulation speed">
     </div>
   </div>
 
@@ -311,7 +308,7 @@ canvas {
 </aside>
 
 <div id="canvas-wrap">
-  <canvas id="c"></canvas>
+  <canvas id="c" aria-label="Mobile manipulation simulation showing robot navigating to shelves and picking and placing items"></canvas>
 </div>
 
 <script>
@@ -335,9 +332,15 @@ let cellSize = 16;
 
 function resizeCanvas() {
   const wrap = document.getElementById('canvas-wrap');
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
-  cellSize = Math.min(canvas.width / COLS, canvas.height / ROWS);
+  const dpr = window.devicePixelRatio || 1;
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cellSize = Math.min(W / COLS, H / ROWS);
 }
 
 window.addEventListener('resize', resizeCanvas);
@@ -934,8 +937,9 @@ function drawRobot() {
 }
 
 function drawAllDoneOverlay() {
-  const cx0 = canvas.width / 2;
-  const cy0 = canvas.height / 2;
+  const dpr = window.devicePixelRatio || 1;
+  const cx0 = canvas.width / dpr / 2;
+  const cy0 = canvas.height / dpr / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(cx0 - 180, cy0 - 28, 360, 56);
   ctx.fillStyle    = '#e8e8e0';
@@ -947,7 +951,7 @@ function drawAllDoneOverlay() {
 
 function drawRuler() {
   const margin = 6;
-  const y = canvas.height - margin - 8;
+  const y = canvas.height / (window.devicePixelRatio || 1) - margin - 8;
   const barW = cellSize * 5;
   ctx.strokeStyle = 'rgba(255,255,255,0.25)';
   ctx.lineWidth   = 1;
@@ -967,9 +971,12 @@ function drawRuler() {
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.width / dpr;
+  const H = canvas.height / dpr;
+  ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = '#141418';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillRect(0, 0, W, H);
 
   drawGrid();
   drawMap();

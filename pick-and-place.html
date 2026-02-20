@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#16161a">
 <title>Pick &amp; Place — Task Sequencing</title>
-<link rel="apple-touch-icon" href="data:,">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%2316161a'/><text y='.9em' font-size='90'>🤖</text></svg>">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -310,7 +310,7 @@ input[type=range]:focus-visible {
 <body>
 <div id="app">
   <div id="canvas-wrap">
-    <canvas id="c"></canvas>
+    <canvas id="c" aria-label="Pick and place arm task sequencing simulation"></canvas>
   </div>
   <aside id="sidebar">
     <div class="sidebar-header">
@@ -350,7 +350,7 @@ input[type=range]:focus-visible {
           <span class="joint-name">Speed</span>
           <span id="v-speed" class="joint-val">1.0×</span>
         </div>
-        <input type="range" id="s-speed" min="0.3" max="3" step="0.1" value="1">
+        <input type="range" id="s-speed" min="0.3" max="3" step="0.1" value="1" aria-label="Simulation speed">
       </div>
     </div>
 
@@ -493,7 +493,7 @@ function resize() {
   canvas.height = H * dpr;
   canvas.style.width = W + 'px';
   canvas.style.height = H + 'px';
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   scale = Math.min(W, H) / 1300;
   ox = W * 0.22;
