@@ -1716,6 +1716,16 @@ async function init() {
   }
 }
 
+// Free WASM heap objects when the page is torn down.
+// MjModel and MjData are C++ objects on the WASM heap; dropping the JS
+// reference does not call their destructors — .delete() must be explicit.
+window.addEventListener('pagehide', () => {
+  loopRunning = false;
+  if (simState.frameId) cancelAnimationFrame(simState.frameId);
+  if (data)  data.delete();
+  if (model) model.delete();
+});
+
 init();
 </script>
 </body>
